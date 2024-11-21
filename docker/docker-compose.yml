@@ -18,6 +18,7 @@ services:
       - /mnt/user/appdata/NeuroPack/config:/app/NeuroPack/config
       - /mnt/user/appdata/NeuroPack/data:/app/NeuroPack/data
       - /mnt/user/appdata/ubuntu/ssh:/etc/ssh/keys
+      - ../:/app/NeuroPack
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility

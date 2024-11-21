@@ -32,7 +32,6 @@ services:
       - "8080:8080"
     stdin_open: true
     tty: true
-    command: ["/app/start_master.sh"]
 
 networks:
   br0:

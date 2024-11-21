@@ -117,6 +117,9 @@ COPY ./neuropack/distributed/node.py /app/NeuroPack/neuropack/distributed/
 # Add ports for node communication and web interface
 EXPOSE 8765 8080
 
-# Update startup script to handle web interface
+# Copy startup script and make it executable
 COPY docker/start_master.sh /app/start_master.sh
 RUN chmod +x /app/start_master.sh
+
+# Update the final CMD
+CMD ["/app/start_master.sh"]

@@ -19,7 +19,11 @@ echo "Web interface will be available at http://192.168.1.230:${WEB_PORT}"
 echo "Node communication port: ${NODE_PORT}"
 
 cd /app/NeuroPack
-python3 -m neuropack.distributed.master \
+# Install package in development mode
+pip install -e .
+
+# Run the master node
+python -m neuropack.distributed.run_master \
     --port ${NODE_PORT} \
     --web-port ${WEB_PORT} \
     --host "0.0.0.0" 

@@ -15,14 +15,14 @@ services:
               count: all
               capabilities: [gpu]
     volumes:
-      - ./neuropack:/app/NeuroPack/neuropack
-      - ./tests:/app/NeuroPack/tests
+      - /mnt/user/appdata/NeuroPack/config:/app/NeuroPack/config
+      - /mnt/user/appdata/NeuroPack/data:/app/NeuroPack/data
       - /mnt/user/appdata/ubuntu/ssh:/etc/ssh/keys
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
       - CUDA_VISIBLE_DEVICES=0,1
-      - NODE_ID=node1
+      - NODE_ID=master-node
       - NODE_PORT=8765
       - WEB_PORT=8080
       - NODE_ROLE=master

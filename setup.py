@@ -13,6 +13,13 @@ setup(
         'GPUtil',
         'aiohttp',
         'asyncio',
-        'zeroconf'
+        'zeroconf',
+        'websockets>=11.0.3',
+        'fastapi>=0.104.1',
+        'uvicorn>=0.24.0',
+        'networkx>=3.2.1',
+        'rich>=10.0.0',
+        'aiofiles>=23.2.1',
+        'jinja2>=3.1.2'
     ],
 )

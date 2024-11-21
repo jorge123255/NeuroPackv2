@@ -1,30 +1,23 @@
 import asyncio
-import logging
-from pathlib import Path
-import sys
+import argparse
+from .master import MasterNode
 
-# Add NeuroPack root to Python path
-repo_root = Path(__file__).parent.parent.parent
-if str(repo_root) not in sys.path:
-    sys.path.insert(0, str(repo_root))
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--port', type=int, default=8765)
+    parser.add_argument('--web-port', type=int, default=8080)
+    parser.add_argument('--host', type=str, default='0.0.0.0')
+    args = parser.parse_args()
 
-from neuropack.distributed.master import MasterNode
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-async def main():
+    master = MasterNode(port=args.port, web_port=args.web_port)
+    
+    loop = asyncio.get_event_loop()
     try:
-        master = MasterNode(port=8765)
-        logger.info("Starting master node...")
-        await master.start()
+        loop.run_until_complete(master.start())
     except KeyboardInterrupt:
-        logger.info("Shutting down master node...")
-    except Exception as e:
-        logger.error(f"Error: {e}")
+        print("\nShutting down...")
+    finally:
+        loop.close()
 
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    main() 

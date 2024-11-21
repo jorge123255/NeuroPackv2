@@ -1,20 +1,15 @@
 import asyncio
-import websockets
-import json
 import logging
-from typing import Dict
-import torch
-import rich
-from rich.live import Live
-from rich.table import Table
-from rich.tree import Tree
-from rich.panel import Panel
-from rich.layout import Layout
-from datetime import datetime
-from ..web.server import TopologyServer
-import uvicorn
-import multiprocessing
+import json
+import websockets
+from pathlib import Path
+import sys
 
+# Fix import paths
+from ..distributed.node import Node, DeviceInfo
+from ..web.server import TopologyServer
+
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class MasterNode:

@@ -5,17 +5,25 @@ import websockets
 from pathlib import Path
 import sys
 import multiprocessing
+import uvicorn
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any, Union
 import torch
+import psutil
+import GPUtil
 from rich.layout import Layout
 from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
 from rich.console import Console
 from rich.tree import Tree
+from rich.text import Text
+from rich.style import Style
+import aiohttp
+from fastapi import FastAPI, WebSocket
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 
-# Fix import paths
 from ..distributed.node import Node, DeviceInfo
 from ..web.server import TopologyServer
 

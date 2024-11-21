@@ -21,3 +21,6 @@ requests>=2.31.0
 # Optional but useful
 tqdm>=4.66.1  # For progress bars
 colorama>=0.4.6  # For colored terminal output 
+
+# Additional requirements
+aioconsole>=0.6.1

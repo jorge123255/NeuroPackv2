@@ -93,3 +93,7 @@ COPY ./neuropack/distributed/node.py /app/NeuroPack/neuropack/distributed/
 
 # Add additional port for node communication
 EXPOSE 8765
+
+# Add startup script
+COPY docker/start_master.sh /app/start_master.sh
+RUN chmod +x /app/start_master.sh

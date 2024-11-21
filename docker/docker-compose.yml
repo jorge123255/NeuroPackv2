@@ -1,0 +1,33 @@
+version: "3.8"
+services:
+  neuropack-node:
+    image: sunnyside1/neuropack:latest
+    container_name: neuropack-node
+    runtime: nvidia
+    networks:
+      br0:
+        ipv4_address: 192.168.1.230
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - ./neuropack:/app/NeuroPack/neuropack
+      - ./tests:/app/NeuroPack/tests
+      - /mnt/user/appdata/ubuntu/ssh:/etc/ssh/keys
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - CUDA_VISIBLE_DEVICES=0,1
+      - NODE_ID=node1
+    ports:
+      - "22:22"
+    stdin_open: true
+    tty: true
+
+networks:
+  br0:
+    external: true

@@ -11,6 +11,7 @@ from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
 from rich.console import Console
+from rich.tree import Tree
 
 # Fix import paths
 from ..distributed.node import Node, DeviceInfo

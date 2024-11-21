@@ -76,3 +76,20 @@ RUN /app/venv/bin/pip3 install --no-cache-dir \
     aiohttp>=3.8.0 \
     asyncio>=3.4.3 \
     zeroconf>=0.39.0
+
+# Add distributed node management packages
+RUN /app/venv/bin/pip3 install --no-cache-dir \
+    websockets>=11.0.3 \
+    fastapi>=0.104.1 \
+    uvicorn>=0.24.0 \
+    networkx>=3.2.1
+
+# Create the node management directory
+RUN mkdir -p /app/NeuroPack/neuropack/distributed
+
+# We'll add these files in separate commands
+COPY ./neuropack/distributed/master.py /app/NeuroPack/neuropack/distributed/
+COPY ./neuropack/distributed/node.py /app/NeuroPack/neuropack/distributed/
+
+# Add additional port for node communication
+EXPOSE 8765

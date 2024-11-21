@@ -7,6 +7,11 @@ import socket
 import json
 from dataclasses import dataclass, asdict
 from typing import Dict, Optional, List
+import asyncio
+import logging
+from neuropack.core.distributed_manager import DistributedManager
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class DeviceInfo:
@@ -54,9 +59,31 @@ class Node:
         self.is_master = master_address is None
         self.connected_nodes: Dict[str, DeviceInfo] = {}
         
+        if torch.cuda.is_available():
+            self.gpu_manager = DistributedManager()
+        else:
+            self.gpu_manager = None
+        
     def to_dict(self) -> Dict:
         return {
             'id': self.id,
             'device_info': asdict(self.device_info),
             'is_master': self.is_master
         }
+        
+    async def start(self):
+        """Start node operations"""
+        if self.is_master:
+            await self.start_master()
+        else:
+            await self.connect_to_master()
+            
+    async def start_master(self):
+        """Start master node operations"""
+        logger.info("Starting master node...")
+        # Initialize master operations
+        
+    async def connect_to_master(self):
+        """Connect to master node"""
+        logger.info(f"Connecting to master at {self.master_address}")
+        # Connection logic

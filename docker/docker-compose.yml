@@ -23,8 +23,11 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
       - CUDA_VISIBLE_DEVICES=0,1
       - NODE_ID=node1
+      - NODE_PORT=8765
+      - NODE_ROLE=master
     ports:
       - "22:22"
+      - "8765:8765"
     stdin_open: true
     tty: true
 

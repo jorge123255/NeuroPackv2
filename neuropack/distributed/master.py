@@ -4,6 +4,7 @@ import json
 import websockets
 from pathlib import Path
 import sys
+from typing import Dict, List, Optional
 from rich.layout import Layout
 from rich.live import Live
 from rich.panel import Panel
@@ -102,7 +103,7 @@ class MasterNode:
         except websockets.ConnectionClosed:
             await self.handle_disconnection(websocket)
             
-    async def process_message(self, websocket, data: Dict):
+    async def process_message(self, websocket, data: dict):
         """Process incoming messages"""
         try:
             msg_type = data.get('type')

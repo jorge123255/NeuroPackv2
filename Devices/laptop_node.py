@@ -30,15 +30,14 @@ logger = logging.getLogger(__name__)
 @click.command()
 @click.option('--master', required=True, help='Master node IP address (e.g., 192.168.1.230)')
 @click.option('--port', default=8765, help='Master node port')
-@click.option('--name', default=None, help='Custom name for this laptop node')
+@click.option('--name', required=True, help='Name for this laptop node')
 def start_laptop_node(master: str, port: int, name: str):
     """Start a laptop node to join the NeuroPack cluster"""
     master_url = f"ws://{master}:{port}"
     
     logger.info(f"Starting laptop node, connecting to {master_url}")
-    if name:
-        logger.info(f"Node name: {name}")
-        
+    logger.info(f"Node name: {name}")
+    
     node = Node(
         master_address=master_url,
         node_type="laptop",

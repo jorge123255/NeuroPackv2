@@ -80,7 +80,7 @@ def setup_laptop():
             f.write(f"""#!/bin/bash
 source "{activate_path}"
 export PYTHONPATH="{repo_root}:$PYTHONPATH"
-python laptop_node.py --master "$1" --name "{laptop_name}" "$@"
+python laptop_node.py --master "$1" --name "{laptop_name}"
 """)
         run_script.chmod(0o755)  # Make executable
         

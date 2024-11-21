@@ -4,14 +4,28 @@ import json
 import logging
 from typing import Dict
 import torch
+import rich
+from rich.live import Live
+from rich.table import Table
+from rich.tree import Tree
+from rich.panel import Panel
+from rich.layout import Layout
+from datetime import datetime
+from ..web.server import TopologyServer
+import uvicorn
+import multiprocessing
 
 logger = logging.getLogger(__name__)
 
 class MasterNode:
-    def __init__(self, port: int = 8765):
+    def __init__(self, port: int = 8765, web_port: int = 8080):
         self.port = port
         self.nodes: Dict[str, Dict] = {}
         self.connections: Dict[str, websockets.WebSocketServerProtocol] = {}
+        self.start_time = datetime.now()
+        self.console = rich.get_console()
+        self.web_port = web_port
+        self.web_server = TopologyServer(self)
         
         # Log GPU information
         if torch.cuda.is_available():
@@ -21,6 +35,57 @@ class MasterNode:
         else:
             logger.warning("No GPUs found")
             
+    def create_topology_display(self) -> Layout:
+        """Create rich layout for topology display"""
+        layout = Layout()
+        layout.split_column(
+            Layout(name="header"),
+            Layout(name="main"),
+            Layout(name="footer")
+        )
+        
+        # Header with cluster info
+        header = Table.grid()
+        header.add_row(
+            f"[bold green]NeuroPack Master Node[/] - Running since {self.start_time.strftime('%H:%M:%S')}"
+        )
+        header.add_row(f"Connected Nodes: {len(self.nodes)}")
+        
+        # Main topology tree
+        tree = Tree("🖥️ [bold yellow]Master Node[/]")
+        
+        for name, node_data in self.nodes.items():
+            node_info = node_data.get('node_info', {})
+            resources = node_info.get('resources', {})
+            system = node_info.get('system_info', {})
+            
+            # Create node branch
+            node_tree = tree.add(
+                f"📱 [bold blue]{name}[/] ({system.get('platform', 'Unknown')})"
+            )
+            
+            # Add resource info
+            if resources:
+                cpu = resources.get('cpu_percent', 0)
+                mem = resources.get('memory', {}).get('percent', 0)
+                node_tree.add(f"CPU: {cpu}% | RAM: {mem}%")
+                
+                # Add GPU info if available
+                if system.get('gpu_info'):
+                    for gpu in system.get('gpu_info', []):
+                        node_tree.add(f"🎮 GPU: {gpu['name']} ({gpu['memory_used']}GB/{gpu['memory_total']}GB)")
+        
+        # Footer with stats
+        footer = Table.grid()
+        footer.add_row("Press Ctrl+C to exit")
+        
+        # Update layout
+        layout["header"].update(Panel(header))
+        layout["main"].update(Panel(tree))
+        layout["footer"].update(Panel(footer))
+        
+        return layout
+        
     async def handle_connection(self, websocket):
         """Handle incoming WebSocket connections"""
         try:
@@ -117,22 +182,46 @@ class MasterNode:
                 logger.error(f"Error broadcasting to node: {e}")
                 
     async def start(self):
-        """Start the master node"""
+        """Start the master node and web interface"""
+        # Start web server in separate process
+        web_process = multiprocessing.Process(
+            target=uvicorn.run,
+            args=(self.web_server.app,),
+            kwargs={
+                "host": "0.0.0.0",
+                "port": self.web_port,
+                "log_level": "info"
+            }
+        )
+        web_process.start()
+        
+        # Start WebSocket server for nodes
         async with websockets.serve(self.handle_connection, "0.0.0.0", self.port):
             logger.info(f"Master node running on port {self.port}")
-            logger.info("Waiting for nodes to connect...")
+            logger.info(f"Web interface available at http://localhost:{self.web_port}")
             
-            # Start periodic status updates
-            while True:
-                if self.nodes:
-                    logger.info("\nCluster Status Update:")
-                    logger.info(f"Connected nodes: {len(self.nodes)}")
-                    for name, node_data in self.nodes.items():
-                        resources = node_data.get('node_info', {}).get('resources', {})
-                        logger.info(f"\nNode: {name}")
-                        if resources:
-                            logger.info(f"CPU Usage: {resources.get('cpu_percent')}%")
-                            memory = resources.get('memory', {})
-                            logger.info(f"Memory Used: {memory.get('percent')}%")
-                            
-                await asyncio.sleep(10)  # Update every 10 seconds
+            # Start topology broadcast
+            await self.web_server.broadcast_topology()
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--port', type=int, default=8765)
+    parser.add_argument('--web-port', type=int, default=8080)
+    parser.add_argument('--host', type=str, default='0.0.0.0')
+    args = parser.parse_args()
+
+    master = MasterNode(port=args.port, web_port=args.web_port)
+    
+    # Start both services
+    import asyncio
+    loop = asyncio.get_event_loop()
+    try:
+        loop.run_until_complete(master.start())
+    except KeyboardInterrupt:
+        print("\nShutting down...")
+    finally:
+        loop.close()
+
+if __name__ == "__main__":
+    main()

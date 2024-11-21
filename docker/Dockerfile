@@ -57,7 +57,7 @@ RUN /app/venv/bin/pip install --no-cache-dir -r /app/NeuroPack/requirements.txt 
 
 # Add CUDA environment variables
 ENV PATH="/usr/local/cuda/bin:${PATH}"
-ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-}"
 
 # Add venv activation to bashrc
 RUN echo "source /app/venv/bin/activate" >> /root/.bashrc
@@ -84,16 +84,39 @@ RUN /app/venv/bin/pip3 install --no-cache-dir \
     uvicorn>=0.24.0 \
     networkx>=3.2.1
 
-# Create the node management directory
-RUN mkdir -p /app/NeuroPack/neuropack/distributed
+# Add web interface dependencies
+RUN /app/venv/bin/pip3 install --no-cache-dir \
+    websockets>=11.0.3 \
+    fastapi>=0.104.1 \
+    uvicorn>=0.24.0 \
+    networkx>=3.2.1 \
+    rich>=10.0.0 \
+    aiofiles>=23.2.1 \
+    jinja2>=3.1.2
 
-# We'll add these files in separate commands
+# Fix LD_LIBRARY_PATH warning
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-}
+
+# Create necessary directories
+RUN mkdir -p /app/NeuroPack/neuropack/distributed && \
+    mkdir -p /app/NeuroPack/neuropack/web/static
+
+# Create and populate the static directory with D3.js
+RUN mkdir -p /app/NeuroPack/neuropack/web/static/js && \
+    curl -L https://d3js.org/d3.v7.min.js -o /app/NeuroPack/neuropack/web/static/js/d3.min.js
+
+# Copy web interface files
+COPY ./neuropack/web/static /app/NeuroPack/neuropack/web/static/
+COPY ./neuropack/web/server.py /app/NeuroPack/neuropack/web/
+COPY ./neuropack/web/__init__.py /app/NeuroPack/neuropack/web/
+
+# Copy distributed system files
 COPY ./neuropack/distributed/master.py /app/NeuroPack/neuropack/distributed/
 COPY ./neuropack/distributed/node.py /app/NeuroPack/neuropack/distributed/
 
-# Add additional port for node communication
-EXPOSE 8765
+# Add ports for node communication and web interface
+EXPOSE 8765 8080
 
-# Add startup script
+# Update startup script to handle web interface
 COPY docker/start_master.sh /app/start_master.sh
 RUN chmod +x /app/start_master.sh

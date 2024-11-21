@@ -24,10 +24,12 @@ services:
       - CUDA_VISIBLE_DEVICES=0,1
       - NODE_ID=node1
       - NODE_PORT=8765
+      - WEB_PORT=8080
       - NODE_ROLE=master
     ports:
       - "22:22"
       - "8765:8765"
+      - "8080:8080"
     stdin_open: true
     tty: true
 

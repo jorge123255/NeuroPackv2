@@ -24,3 +24,4 @@ colorama>=0.4.6  # For colored terminal output
 
 # Additional requirements
 aioconsole>=0.6.1
+rich>=10.0.0

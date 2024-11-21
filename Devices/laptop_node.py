@@ -43,6 +43,37 @@ class LaptopInfo:
         self.network = psutil.net_io_counters()
         self.timestamp = datetime.now().isoformat()
         
+    def get_gpu_info(self):
+        """Get GPU information"""
+        try:
+            import torch
+            if torch.cuda.is_available():
+                return [{
+                    'name': torch.cuda.get_device_name(i),
+                    'memory_total': torch.cuda.get_device_properties(i).total_memory / 1024**3,
+                    'memory_used': (torch.cuda.get_device_properties(i).total_memory - 
+                                  torch.cuda.memory_allocated(i)) / 1024**3
+                } for i in range(torch.cuda.device_count())]
+        except:
+            pass
+        
+        try:
+            # Try nvidia-smi as backup
+            import subprocess
+            result = subprocess.check_output(['nvidia-smi', '--query-gpu=name,memory.total,memory.used',
+                                           '--format=csv,noheader,nounits']).decode()
+            gpus = []
+            for line in result.strip().split('\n'):
+                name, total, used = line.split(',')
+                gpus.append({
+                    'name': name.strip(),
+                    'memory_total': float(total)/1024,
+                    'memory_used': float(used)/1024
+                })
+            return gpus
+        except:
+            return []
+    
     def to_dict(self):
         return {
             'node_name': self.node_name,
@@ -53,6 +84,7 @@ class LaptopInfo:
                 'processor': platform.processor(),
                 'cpu_cores': psutil.cpu_count(),
                 'cpu_freq': psutil.cpu_freq()._asdict() if psutil.cpu_freq() else None,
+                'gpu_info': self.get_gpu_info()
             },
             'resources': {
                 'cpu_percent': self.cpu_percent,

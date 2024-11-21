@@ -15,7 +15,8 @@ RUN apt-get update && \
     nano \
     curl \
     nvidia-cuda-toolkit \
-    nvidia-cuda-toolkit-gcc && \
+    nvidia-cuda-toolkit-gcc \
+    python3-distutils && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

@@ -4,6 +4,11 @@ import json
 import websockets
 from pathlib import Path
 import sys
+from rich.layout import Layout
+from rich.live import Live
+from rich.panel import Panel
+from rich.table import Table
+from rich.console import Console
 
 # Fix import paths
 from ..distributed.node import Node, DeviceInfo
@@ -18,9 +23,11 @@ class MasterNode:
         self.nodes: Dict[str, Dict] = {}
         self.connections: Dict[str, websockets.WebSocketServerProtocol] = {}
         self.start_time = datetime.now()
-        self.console = rich.get_console()
+        self.console = Console()
         self.web_port = web_port
         self.web_server = TopologyServer(self)
+        self.layout = self.create_topology_display()
+        self.live = Live(self.layout, refresh_per_second=4)
         
         # Log GPU information
         if torch.cuda.is_available():

@@ -20,7 +20,12 @@ setup(
         'networkx>=3.2.1',
         'rich>=10.0.0',
         'aiofiles>=23.2.1',
-        'jinja2>=3.1.2'
+        'jinja2>=3.1.2',
+        'asyncio>=3.4.3',
+        'aiohttp>=3.8.0',
+        'zeroconf>=0.136.2',
+        'GPUtil>=1.4.0',
+        'psutil>=5.9.0'
     ],
     entry_points={
         'console_scripts': [

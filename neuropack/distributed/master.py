@@ -4,6 +4,7 @@ import json
 import websockets
 from pathlib import Path
 import sys
+from datetime import datetime
 from typing import Dict, List, Optional
 from rich.layout import Layout
 from rich.live import Live

@@ -23,7 +23,7 @@ cd /app/NeuroPack
 pip install -e .
 
 # Run the master node
-python -m neuropack.distributed.run_master \
+python3 -m neuropack.distributed.run_master \
     --port ${NODE_PORT} \
     --web-port ${WEB_PORT} \
     --host "0.0.0.0" 

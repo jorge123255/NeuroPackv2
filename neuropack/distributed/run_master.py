@@ -1,6 +1,7 @@
+#!/usr/bin/env python3
 import asyncio
 import argparse
-from .master import MasterNode
+from neuropack.distributed.master import MasterNode
 
 def main():
     parser = argparse.ArgumentParser()

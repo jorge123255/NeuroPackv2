@@ -22,4 +22,9 @@ setup(
         'aiofiles>=23.2.1',
         'jinja2>=3.1.2'
     ],
+    entry_points={
+        'console_scripts': [
+            'neuropack-master=neuropack.distributed.run_master:main',
+        ],
+    }
 )

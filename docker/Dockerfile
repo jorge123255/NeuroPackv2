@@ -8,7 +8,6 @@ RUN apt-get update && \
     python3-pip \
     python3-dev \
     python3-venv \
-    python3-stdlib \
     build-essential \
     git \
     openssh-server \

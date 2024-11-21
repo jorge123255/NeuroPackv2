@@ -8,6 +8,7 @@ RUN apt-get update && \
     python3-pip \
     python3-dev \
     python3-venv \
+    python3-stdlib \
     build-essential \
     git \
     openssh-server \
@@ -15,8 +16,7 @@ RUN apt-get update && \
     nano \
     curl \
     nvidia-cuda-toolkit \
-    nvidia-cuda-toolkit-gcc \
-    python3-distutils && \
+    nvidia-cuda-toolkit-gcc && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

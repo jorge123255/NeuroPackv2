@@ -51,12 +51,12 @@ class DeviceInfo:
             platform=platform.system()
         )
 
-class Node:
-    def __init__(self, master_address: Optional[str] = None):
+class WorkerNode:
+    def __init__(self, master_host, master_port=8765):
+        self.master_uri = f"ws://{master_host}:{master_port}"
         self.id = str(uuid.uuid4())
         self.device_info = DeviceInfo.gather_info()
-        self.master_address = master_address
-        self.is_master = master_address is None
+        self.is_master = False
         self.connected_nodes: Dict[str, DeviceInfo] = {}
         
         if torch.cuda.is_available():
@@ -85,5 +85,5 @@ class Node:
         
     async def connect_to_master(self):
         """Connect to master node"""
-        logger.info(f"Connecting to master at {self.master_address}")
+        logger.info(f"Connecting to master at {self.master_uri}")
         # Connection logic

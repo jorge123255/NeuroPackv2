@@ -217,6 +217,9 @@ class MasterNode:
             
             # Start topology broadcast
             await self.web_server.broadcast_topology()
+            
+            # Keep the server running
+            await asyncio.Future()  # run forever
 
 def main():
     import argparse

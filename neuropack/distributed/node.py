@@ -51,7 +51,7 @@ class DeviceInfo:
             platform=platform.system()
         )
 
-class WorkerNode:
+class Node:
     def __init__(self, master_host, master_port=8765):
         self.master_uri = f"ws://{master_host}:{master_port}"
         self.id = str(uuid.uuid4())

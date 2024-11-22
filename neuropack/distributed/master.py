@@ -24,7 +24,7 @@ from fastapi import FastAPI, WebSocket
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from ..distributed.node import Node, DeviceInfo
+from ..distributed.node import WorkerNode as Node, DeviceInfo
 from ..web.server import TopologyServer
 
 logging.basicConfig(level=logging.INFO)

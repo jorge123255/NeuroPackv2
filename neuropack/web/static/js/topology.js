@@ -456,6 +456,50 @@ function addMetricBar(group, label, value, yOffset) {
         .text(`${value.toFixed(1)}%`);
 }
 
+// Create ASCII-style link path with dots and lines
+function createASCIILink(x1, y1, x2, y2) {
+    const g = d3.select(this);
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    const segments = Math.floor(distance / 30); // One dot every 30 pixels
+    
+    // Create dotted path
+    let pathData = `M ${x1},${y1} `;
+    for (let i = 1; i <= segments; i++) {
+        const t = i / segments;
+        const x = x1 + dx * t;
+        const y = y1 + dy * t;
+        pathData += `L ${x},${y} `;
+    }
+    pathData += `L ${x2},${y2}`;
+
+    // Add dots along the path
+    for (let i = 0; i <= segments; i++) {
+        const t = i / segments;
+        const x = x1 + dx * t;
+        const y = y1 + dy * t;
+        g.append('text')
+            .attr('x', x)
+            .attr('y', y)
+            .attr('class', 'ascii-link')
+            .attr('text-anchor', 'middle')
+            .text('●');
+    }
+
+    // Add connection status indicators
+    const midX = (x1 + x2) / 2;
+    const midY = (y1 + y2) / 2;
+    g.append('text')
+        .attr('x', midX)
+        .attr('y', midY - 10)
+        .attr('class', 'ascii-link-status')
+        .attr('text-anchor', 'middle')
+        .text('[CONNECTED]');
+
+    return pathData;
+}
+
 // Update the visualization function
 function updateVisualization(data) {
     if (!data || !data.nodes || !data.links) {
@@ -495,37 +539,42 @@ function updateVisualization(data) {
     // Create node boxes
     nodeElements.merge(nodeEnter).each(createNodeBox);
 
-    // Update links
-    const linkElements = g.selectAll('.link')
+    // Update links with ASCII style
+    const linkElements = g.selectAll('.link-group')
         .data(data.links, d => `${d.source}-${d.target}`);
 
     // Remove old links
     linkElements.exit().remove();
 
-    // Add new links with ASCII-style
-    linkElements.enter()
-        .append('path')
-        .attr('class', 'link')
-        .attr('d', d => {
-            const sourceNode = data.nodes.find(n => n.id === d.source);
-            const targetNode = data.nodes.find(n => n.id === d.target);
-            if (sourceNode && targetNode) {
-                return createASCIILink(sourceNode.fx, sourceNode.fy, targetNode.fx, targetNode.fy);
-            }
-            return '';
-        });
+    // Add new links
+    const linkEnter = linkElements.enter()
+        .append('g')
+        .attr('class', 'link-group');
+
+    // Create the base link path
+    linkEnter.append('path')
+        .attr('class', 'link-path')
+        .attr('stroke', '#33ff33')
+        .attr('stroke-width', 1)
+        .attr('fill', 'none');
+
+    // Update all links
+    linkElements.merge(linkEnter).each(function(d) {
+        const sourceNode = data.nodes.find(n => n.id === d.source);
+        const targetNode = data.nodes.find(n => n.id === d.target);
+        if (sourceNode && targetNode) {
+            const pathData = createASCIILink.call(this, 
+                sourceNode.fx, sourceNode.fy,
+                targetNode.fx, targetNode.fy
+            );
+            d3.select(this).select('.link-path')
+                .attr('d', pathData);
+        }
+    });
 
     // Update stats and model panel
     updateStats(data);
     updateModelPanel(data);
-}
-
-// Create ASCII-style link path
-function createASCIILink(x1, y1, x2, y2) {
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    const dr = Math.sqrt(dx * dx + dy * dy) * 1.2;
-    return `M${x1},${y1}A${dr},${dr} 0 0,1 ${x2},${y2}`;
 }
 
 // Replace both additionalStyles declarations with a single one at the top
@@ -570,6 +619,25 @@ const styles = `
     .model-panel {
         max-height: 400px;
         overflow-y: auto;
+    }
+    .ascii-link {
+        fill: #33ff33;
+        font-size: 8px;
+        pointer-events: none;
+    }
+    .ascii-link-status {
+        fill: #33ff33;
+        font-size: 10px;
+        font-family: 'Courier New', monospace;
+    }
+    .link-path {
+        stroke-dasharray: 5,5;
+        animation: dash 20s linear infinite;
+    }
+    @keyframes dash {
+        to {
+            stroke-dashoffset: 1000;
+        }
     }
 `;
 

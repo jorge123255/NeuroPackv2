@@ -6,10 +6,11 @@ from pathlib import Path
 import sys
 import multiprocessing
 import uvicorn
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
 import os
+from typing import Set
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -19,9 +20,9 @@ class TopologyServer:
         self.host = host
         self.port = port
         self.app = FastAPI()
-        self.connections = set()
+        self.connections: Set[WebSocket] = set()
+        self.latest_topology = None
         self.setup_routes()
-        self.latest_topology = None  # Store latest topology
         
     def setup_routes(self):
         static_dir = Path(__file__).parent / "static"
@@ -33,56 +34,47 @@ class TopologyServer:
             
         @self.app.websocket("/ws")
         async def websocket_endpoint(websocket: WebSocket):
+            await websocket.accept()
+            logger.info("New WebSocket client connected")
+            self.connections.add(websocket)
+            
             try:
-                await websocket.accept()
-                logger.info("New WebSocket client connected")
-                self.connections.add(websocket)
-                
                 # Send initial topology if available
                 if self.latest_topology:
-                    try:
-                        await websocket.send_json(self.latest_topology)
-                    except Exception as e:
-                        logger.error(f"Error sending initial topology: {e}")
+                    await websocket.send_json(self.latest_topology)
                 
-                # Keep connection alive and handle incoming messages
+                # Keep connection alive
                 while True:
                     try:
-                        # Wait for messages (ping/pong or actual data)
                         data = await websocket.receive_text()
                         if data == "ping":
                             await websocket.send_text("pong")
                     except WebSocketDisconnect:
-                        logger.info("WebSocket client disconnected normally")
                         break
-                    except Exception as e:
-                        logger.error(f"WebSocket error: {e}")
-                        break
+                    
             except Exception as e:
-                logger.error(f"Error in WebSocket connection: {e}")
+                logger.error(f"WebSocket error: {e}")
             finally:
-                if websocket in self.connections:
-                    self.connections.remove(websocket)
-                logger.info("WebSocket client disconnected")
+                self.connections.remove(websocket)
+                logger.info(f"Client disconnected. Active connections: {len(self.connections)}")
                 
     async def broadcast_topology(self, topology_data):
         """Broadcast topology updates to all connected clients"""
+        if not self.connections:
+            return
+            
         logger.info(f"Broadcasting topology to {len(self.connections)} clients")
-        logger.debug(f"Topology data: {topology_data}")
-        
-        # Store latest topology
         self.latest_topology = topology_data
         
         dead_connections = set()
-        for connection in self.connections:
+        for websocket in self.connections:
             try:
-                await connection.send_json(topology_data)
-                logger.debug(f"Sent topology to client")
+                await websocket.send_json(topology_data)
             except Exception as e:
                 logger.error(f"Failed to send to client: {e}")
-                dead_connections.add(connection)
+                dead_connections.add(websocket)
         
-        # Cleanup dead connections
+        # Remove dead connections
         self.connections -= dead_connections
 
     async def broadcast_metrics(self, metrics_data):

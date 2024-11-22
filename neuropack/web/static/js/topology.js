@@ -24,7 +24,7 @@ const simulation = d3.forceSimulation()
     .force('x', d3.forceX(width / 2).strength(0.5))
     .force('y', d3.forceY(height / 2).strength(0.5));
 
-// Update the WebSocket connection setup
+// Update WebSocket connection setup
 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 const wsUrl = `${wsProtocol}//${window.location.hostname}:${window.location.port}/ws`;
 console.log('Attempting to connect to WebSocket:', wsUrl);
@@ -34,10 +34,15 @@ let reconnectAttempts = 0;
 const maxReconnectAttempts = 5;
 
 function connectWebSocket() {
+    if (ws) {
+        ws.close();
+    }
+
     ws = new WebSocket(wsUrl);
+    console.log('Creating new WebSocket connection...');
 
     ws.onopen = () => {
-        console.log('WebSocket connected');
+        console.log('WebSocket connected successfully');
         reconnectAttempts = 0;
         d3.select('.connection-status')
             .style('color', '#4CAF50')
@@ -45,13 +50,12 @@ function connectWebSocket() {
         startPingPong();
     };
 
-    ws.onclose = () => {
-        console.error('WebSocket disconnected');
+    ws.onclose = (event) => {
+        console.log('WebSocket closed:', event);
         d3.select('.connection-status')
             .style('color', '#ff4444')
             .text('● Disconnected from server');
         
-        // Attempt to reconnect
         if (reconnectAttempts < maxReconnectAttempts) {
             reconnectAttempts++;
             console.log(`Attempting to reconnect (${reconnectAttempts}/${maxReconnectAttempts})...`);
@@ -63,16 +67,16 @@ function connectWebSocket() {
         console.error('WebSocket error:', error);
     };
 
-    ws.onmessage = function(event) {
-        console.log('Received data:', event.data);
+    ws.onmessage = (event) => {
+        console.log('Received message:', event.data);
         try {
             const data = JSON.parse(event.data);
+            if (data === 'pong') {
+                return;
+            }
             if (data.nodes && data.links) {
+                console.log('Updating visualization with:', data);
                 updateVisualization(data);
-                updateStats(data);
-                updateModelPanel(data);
-            } else {
-                console.error('Invalid data format:', data);
             }
         } catch (e) {
             console.error('Error processing message:', e);
@@ -80,7 +84,18 @@ function connectWebSocket() {
     };
 }
 
-// Initial connection
+// Start ping/pong mechanism
+function startPingPong() {
+    const pingInterval = setInterval(() => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send('ping');
+        } else {
+            clearInterval(pingInterval);
+        }
+    }, 30000);
+}
+
+// Initialize connection
 connectWebSocket();
 
 let nodes = [];
@@ -756,13 +771,4 @@ function addContextMenu(node) {
             d3.select('body').on('click.context-menu', null);
         });
     });
-}
-
-// Add ping/pong mechanism
-function startPingPong() {
-    setInterval(() => {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send('ping');
-        }
-    }, 30000); // Send ping every 30 seconds
 }

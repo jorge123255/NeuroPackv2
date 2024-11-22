@@ -170,3 +170,10 @@ class TopologyServer:
         """Start the web server"""
         import uvicorn
         uvicorn.run(self.app, host="0.0.0.0", port=self.master_node.web_port) 
+
+    async def send_topology_updates(self):
+        while True:
+            topology_data = get_current_topology()
+            print("Sending topology:", topology_data)  # Add this line to debug
+            await websocket.send_json(topology_data)
+            await asyncio.sleep(1) 

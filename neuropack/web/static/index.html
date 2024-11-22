@@ -2,150 +2,36 @@
 <html>
 <head>
     <title>NeuroPack Topology</title>
-    <script src="https://d3js.org/d3.v7.min.js"></script>
     <style>
         body {
             margin: 0;
-            background: #1a1a1a;
-            color: #fff;
+            padding: 0;
             font-family: Arial, sans-serif;
+            background: #1a1a1a;
+            color: #ffffff;
         }
-        #topology {
+        #topology-container {
             width: 100vw;
             height: 100vh;
         }
         .node {
-            cursor: pointer;
-        }
-        .node text {
-            fill: #fff;
-        }
-        .link {
-            stroke: #666;
+            fill: #4CAF50;
+            stroke: #fff;
             stroke-width: 2px;
         }
-        .master-node {
-            fill: #4CAF50;
+        .link {
+            stroke: #999;
+            stroke-opacity: 0.6;
         }
-        .laptop-node {
-            fill: #2196F3;
-        }
-        .tooltip {
-            position: absolute;
-            padding: 10px;
-            background: rgba(0, 0, 0, 0.8);
-            border-radius: 5px;
-            color: white;
-            display: none;
+        .node text {
+            fill: white;
+            font-size: 12px;
         }
     </style>
 </head>
 <body>
-    <div id="topology"></div>
-    <div class="tooltip"></div>
-    <script>
-        const width = window.innerWidth;
-        const height = window.innerHeight;
-        
-        // Set up the D3 visualization
-        const svg = d3.select("#topology")
-            .append("svg")
-            .attr("width", width)
-            .attr("height", height);
-            
-        const simulation = d3.forceSimulation()
-            .force("link", d3.forceLink().id(d => d.id))
-            .force("charge", d3.forceManyBody().strength(-1000))
-            .force("center", d3.forceCenter(width / 2, height / 2));
-            
-        // WebSocket connection
-        const ws = new WebSocket(`ws://${window.location.host}/ws`);
-        ws.onmessage = function(event) {
-            const data = JSON.parse(event.data);
-            updateTopology(data);
-        };
-        
-        function updateTopology(data) {
-            // Update links
-            const link = svg.selectAll(".link")
-                .data(data.links, d => `${d.source}-${d.target}`);
-                
-            link.exit().remove();
-            
-            const linkEnter = link.enter()
-                .append("line")
-                .attr("class", "link")
-                .attr("stroke-dasharray", "5,5")
-                .attr("stroke-width", d => Math.sqrt(d.value));
-                
-            // Update nodes
-            const node = svg.selectAll(".node")
-                .data(data.nodes, d => d.id);
-                
-            node.exit().remove();
-            
-            const nodeEnter = node.enter()
-                .append("g")
-                .attr("class", "node")
-                .call(d3.drag()
-                    .on("start", dragstarted)
-                    .on("drag", dragged)
-                    .on("end", dragended));
-                    
-            nodeEnter.append("circle")
-                .attr("r", d => d.type === 'master' ? 30 : 20)
-                .attr("class", d => `${d.type}-node`)
-                .on("mouseover", showTooltip)
-                .on("mouseout", hideTooltip);
-                
-            nodeEnter.append("text")
-                .attr("dy", 30)
-                .attr("text-anchor", "middle")
-                .text(d => d.label);
-                
-            // Update simulation
-            simulation
-                .nodes(data.nodes)
-                .force("link").links(data.links);
-                
-            simulation.alpha(1).restart();
-        }
-        
-        function showTooltip(event, d) {
-            const tooltip = d3.select(".tooltip");
-            let content = `<strong>${d.label}</strong><br>`;
-            if (d.type !== 'master') {
-                content += `CPU: ${d.cpu_usage}%<br>`;
-                content += `Memory: ${d.memory_usage}%<br>`;
-                if (d.gpu_info && d.gpu_info.length > 0) {
-                    content += `<br>GPUs:<br>`;
-                    d.gpu_info.forEach(gpu => {
-                        content += `Platform: ${gpu.platform}<br>`;
-                        content += `GPU: ${gpu.gpu_info.length}<br>`;
-                    });
-                }
-            }
-            tooltip.html(content)
-                .style("left", (event.pageX + 5) + "px")
-                .style("top", (event.pageY + 5) + "px")
-                .style("display", "block");
-        }
-        
-        function hideTooltip() {
-            d3.select(".tooltip").style("display", "none");
-        }
-        
-        function dragstarted(event, d) {
-            d3.select(this).attr("r", 30);
-        }
-        
-        function dragged(event, d) {
-            d3.select(this).attr("cx", event.x).attr("cy", event.y);
-        }
-        
-        function dragended(event, d) {
-            d3.select(this).attr("r", 20);
-        }
-    </script>
+    <div id="topology-container"></div>
+    <script src="/static/js/d3.min.js"></script>
+    <script src="/static/js/topology.js"></script>
 </body>
 </html> 

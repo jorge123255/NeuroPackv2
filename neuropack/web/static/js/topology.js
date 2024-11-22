@@ -528,8 +528,8 @@ function createASCIILink(x1, y1, x2, y2) {
     return `M${x1},${y1}A${dr},${dr} 0 0,1 ${x2},${y2}`;
 }
 
-// Add these styles
-const additionalStyles = `
+// Replace both additionalStyles declarations with a single one at the top
+const styles = `
     .node-text {
         font-family: 'Courier New', monospace;
         fill: #33ff33;
@@ -553,11 +553,29 @@ const additionalStyles = `
         fill: #33ff33;
         font-size: 12px;
     }
+    .terminal-output div {
+        margin: 2px 0;
+    }
+    .meter-bg {
+        fill: rgba(51, 255, 51, 0.1);
+        stroke: #33ff33;
+    }
+    .meter-fill {
+        fill: #33ff33;
+    }
+    .ascii-decoration {
+        fill: #33ff33;
+        font-family: 'Courier New', monospace;
+    }
+    .model-panel {
+        max-height: 400px;
+        overflow-y: auto;
+    }
 `;
 
 // Add the styles
 const styleSheet = document.createElement('style');
-styleSheet.textContent = additionalStyles;
+styleSheet.textContent = styles;
 document.head.appendChild(styleSheet);
 
 // Remove drag-related functions and simplify the simulation
@@ -694,33 +712,6 @@ document.addEventListener('keydown', (event) => {
             terminal.style('display') === 'none' ? 'block' : 'none');
     }
 });
-
-// Add these styles
-const additionalStyles = `
-    .terminal-output div {
-        margin: 2px 0;
-    }
-    .meter-bg {
-        fill: rgba(51, 255, 51, 0.1);
-        stroke: #33ff33;
-    }
-    .meter-fill {
-        fill: #33ff33;
-    }
-    .ascii-decoration {
-        fill: #33ff33;
-        font-family: 'Courier New', monospace;
-    }
-    .model-panel {
-        max-height: 400px;
-        overflow-y: auto;
-    }
-`;
-
-// Add the styles to the document
-const additionalStyleSheet = document.createElement('style');
-additionalStyleSheet.textContent = additionalStyles;
-document.head.appendChild(additionalStyleSheet);
 
 // Add a context menu for node actions
 function addContextMenu(node) {

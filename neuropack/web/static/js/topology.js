@@ -74,14 +74,18 @@ function formatBytes(bytes) {
 function updateStats(data) {
     const statsContent = d3.select('#stats-content');
     const totalNodes = data.nodes.length;
-    const totalCPUs = data.nodes.reduce((acc, node) => acc + node.info.cpu_count, 0);
     const totalGPUs = data.nodes.reduce((acc, node) => acc + node.info.gpu_count, 0);
-    
+    const totalMemory = data.nodes.reduce((acc, node) => acc + node.info.total_memory, 0);
+
     statsContent.html(`
-        <div class="stats-item">Total Nodes: ${totalNodes}</div>
-        <div class="stats-item">Total CPUs: ${totalCPUs}</div>
-        <div class="stats-item">Total GPUs: ${totalGPUs}</div>
-    `);
+        +${'-'.repeat(30)}+
+        |  Cluster Statistics        |
+        +${'-'.repeat(30)}+
+        |  Nodes: ${totalNodes.toString().padEnd(20)} |
+        |  GPUs:  ${totalGPUs.toString().padEnd(20)} |
+        |  Memory: ${formatBytes(totalMemory).padEnd(19)} |
+        +${'-'.repeat(30)}+
+    `.replace(/\n/g, '<br>'));
 }
 
 function showTooltip(d) {
@@ -124,91 +128,177 @@ function hideTooltip() {
     tooltip.style('display', 'none');
 }
 
+// Add ASCII art styling
+const style = document.createElement('style');
+style.textContent = `
+    .node text {
+        font-family: 'Courier New', monospace;
+        fill: #33ff33;
+        font-size: 14px;
+    }
+    .link {
+        stroke: #33ff33;
+        stroke-width: 2px;
+        stroke-dasharray: 5,5;
+    }
+    .node-box {
+        fill: none;
+        stroke: #33ff33;
+        stroke-width: 2px;
+    }
+    .stats-box {
+        fill: rgba(0, 0, 0, 0.5);
+        stroke: #33ff33;
+        stroke-width: 2px;
+    }
+    .ascii-decoration {
+        fill: none;
+        stroke: #33ff33;
+        stroke-width: 1px;
+    }
+    .gpu-meter {
+        fill: #1a1a1a;
+        stroke: #33ff33;
+    }
+    .gpu-meter-fill {
+        fill: #33ff33;
+    }
+    .cluster-title {
+        font-family: 'Courier New', monospace;
+        fill: #33ff33;
+        font-size: 24px;
+    }
+`;
+document.head.appendChild(style);
+
+// Add cluster title with ASCII art border
+function addClusterTitle(svg) {
+    const title = svg.append('g')
+        .attr('class', 'cluster-header')
+        .attr('transform', `translate(${width/2}, 40)`);
+
+    title.append('text')
+        .attr('class', 'cluster-title')
+        .attr('text-anchor', 'middle')
+        .text('NeuroPack Cluster');
+
+    // ASCII border around title
+    title.append('path')
+        .attr('class', 'ascii-decoration')
+        .attr('d', `M-150,-20 L-140,-20 M140,-20 L150,-20 M-150,20 L-140,20 M140,20 L150,20
+                   M-150,-20 L-150,20 M150,-20 L150,20`);
+}
+
 function updateVisualization(data) {
     if (!data || !data.nodes || !data.links) {
         console.warn('Invalid topology data received');
         return;
     }
+
+    // Clear previous content
+    g.selectAll('*').remove();
     
-    console.log('Updating visualization with:', data);  // Debug log
-    
-    // Update nodes and links
-    nodes = data.nodes;
-    links = data.links;
-    
-    // Update statistics
-    updateStats(data);
-    
-    // Update links
-    const link = g.selectAll('.link')
-        .data(links, d => `${d.source.id || d.source}-${d.target.id || d.target}`);
-        
-    link.exit().remove();
-    
-    const linkEnter = link.enter()
-        .append('line')
-        .attr('class', 'link')
-        .attr('stroke-dasharray', '5,5')
-        .attr('marker-end', 'url(#arrow)');
-        
-    // Update nodes
+    // Add cluster title
+    addClusterTitle(svg);
+
+    // Create node groups
     const node = g.selectAll('.node')
-        .data(nodes, d => d.id);
-        
-    node.exit().remove();
-    
-    const nodeEnter = node.enter()
+        .data(data.nodes)
+        .enter()
         .append('g')
-        .attr('class', d => `node ${d.role}`)
+        .attr('class', 'node')
         .call(d3.drag()
             .on('start', dragstarted)
             .on('drag', dragged)
             .on('end', dragended));
+
+    // Add ASCII-style boxes for nodes
+    node.append('rect')
+        .attr('class', 'node-box')
+        .attr('width', 200)
+        .attr('height', 100)
+        .attr('x', -100)
+        .attr('y', -50);
+
+    // Add node labels with ASCII decorations
+    node.append('text')
+        .attr('y', -30)
+        .text(d => `+${'-'.repeat(20)}+`);
+
+    node.append('text')
+        .attr('y', -15)
+        .text(d => `| ${d.id.padEnd(18)} |`);
+
+    node.append('text')
+        .attr('y', 0)
+        .text(d => `| ${d.info.platform.padEnd(18)} |`);
+
+    // Add GPU meters
+    node.each(function(d) {
+        const nodeGroup = d3.select(this);
+        if (d.info.gpu_count > 0) {
+            const gpuBar = nodeGroup.append('g')
+                .attr('transform', 'translate(-80, 20)');
             
-    nodeEnter.append('circle')
-        .attr('r', 30);
-    
-    addGPUMetrics(nodeEnter);
-    addHealthIndicator(nodeEnter);
-    
-    nodeEnter.on('click', (event, d) => {
-        showDetailedMetrics(d);
+            gpuBar.append('text')
+                .text(`GPUs: [${d.info.gpu_info.map(g => g.name.slice(0, 10)).join(', ')}]`);
+
+            // Add GPU utilization meters
+            d.info.gpu_info.forEach((gpu, i) => {
+                const meter = gpuBar.append('g')
+                    .attr('transform', `translate(0, ${i * 15 + 10})`);
+
+                meter.append('rect')
+                    .attr('class', 'gpu-meter')
+                    .attr('width', 160)
+                    .attr('height', 10);
+
+                const usage = gpu.current_memory / gpu.total_memory * 100;
+                meter.append('rect')
+                    .attr('class', 'gpu-meter-fill')
+                    .attr('width', usage * 1.6)
+                    .attr('height', 10);
+            });
+        }
     });
-    
-    nodeEnter.append('circle')
-        .attr('r', 30)
-        .on('mouseover', (event, d) => {
-            showTooltip(d);
-            tooltip
-                .style('left', (event.pageX + 10) + 'px')
-                .style('top', (event.pageY + 10) + 'px');
-        })
-        .on('mousemove', (event) => {
-            tooltip
-                .style('left', (event.pageX + 10) + 'px')
-                .style('top', (event.pageY + 10) + 'px');
-        })
-        .on('mouseout', hideTooltip);
-        
-    nodeEnter.append('text')
-        .attr('dy', 40)
-        .text(d => d.id);
-        
-    // Update simulation
+
+    // Add ASCII-style connections
+    const link = g.selectAll('.link')
+        .data(data.links)
+        .enter()
+        .append('path')
+        .attr('class', 'link')
+        .attr('marker-end', 'url(#arrow)');
+
+    // Add arrow marker
+    svg.append('defs').append('marker')
+        .attr('id', 'arrow')
+        .attr('viewBox', '0 -5 10 10')
+        .attr('refX', 8)
+        .attr('refY', 0)
+        .attr('markerWidth', 6)
+        .attr('markerHeight', 6)
+        .attr('orient', 'auto')
+        .append('path')
+        .attr('fill', '#33ff33')
+        .attr('d', 'M0,-5L10,0L0,5');
+
+    // Update force simulation
     simulation
-        .nodes(nodes)
-        .on('tick', () => {
-            g.selectAll('.link')
-                .attr('x1', d => d.source.x)
-                .attr('y1', d => d.source.y)
-                .attr('x2', d => d.target.x)
-                .attr('y2', d => d.target.y);
-                
-            g.selectAll('.node')
-                .attr('transform', d => `translate(${d.x},${d.y})`);
+        .nodes(data.nodes)
+        .force('link').links(data.links);
+
+    simulation.on('tick', () => {
+        link.attr('d', d => {
+            const dx = d.target.x - d.source.x;
+            const dy = d.target.y - d.source.y;
+            const dr = Math.sqrt(dx * dx + dy * dy);
+            return `M${d.source.x},${d.source.y}A${dr},${dr} 0 0,1 ${d.target.x},${d.target.y}`;
         });
-        
-    simulation.force('link').links(links);
+
+        node.attr('transform', d => `translate(${d.x},${d.y})`);
+    });
+
     simulation.alpha(1).restart();
 }
 

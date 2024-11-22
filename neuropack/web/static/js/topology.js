@@ -189,118 +189,213 @@ function addClusterTitle(svg) {
                    M-150,-20 L-150,20 M150,-20 L150,20`);
 }
 
+function createNodeBox(node) {
+    const nodeGroup = d3.select(this);
+    const info = node.info;
+    
+    // Create ASCII-style box
+    const boxWidth = 280;
+    const boxHeight = info.gpu_count > 0 ? 180 : 120;
+    
+    // Main box
+    nodeGroup.append('rect')
+        .attr('class', 'node-box')
+        .attr('width', boxWidth)
+        .attr('height', boxHeight)
+        .attr('x', -boxWidth/2)
+        .attr('y', -boxHeight/2)
+        .attr('rx', 3)
+        .attr('ry', 3);
+
+    // Title bar
+    nodeGroup.append('rect')
+        .attr('class', 'node-title')
+        .attr('width', boxWidth)
+        .attr('height', 25)
+        .attr('x', -boxWidth/2)
+        .attr('y', -boxHeight/2)
+        .attr('fill', node.role === 'master' ? '#ff4444' : '#33ff33')
+        .attr('opacity', 0.3);
+
+    // Node name
+    nodeGroup.append('text')
+        .attr('class', 'node-name')
+        .attr('x', -boxWidth/2 + 10)
+        .attr('y', -boxHeight/2 + 16)
+        .text(`${node.info.hostname} (${node.role})`);
+
+    // System info
+    const systemInfo = nodeGroup.append('g')
+        .attr('class', 'system-info')
+        .attr('transform', `translate(${-boxWidth/2 + 10}, ${-boxHeight/2 + 40})`);
+
+    systemInfo.append('text')
+        .attr('y', 15)
+        .text(`CPU: ${info.cpu_count} cores @ ${(info.cpu_freq/1000).toFixed(2)} GHz`);
+
+    // Memory bar
+    const memUsage = (info.total_memory - info.available_memory) / info.total_memory * 100;
+    const memBar = systemInfo.append('g')
+        .attr('transform', 'translate(0, 25)');
+
+    memBar.append('text')
+        .attr('y', 15)
+        .text(`RAM: ${formatBytes(info.available_memory)} / ${formatBytes(info.total_memory)}`);
+
+    memBar.append('rect')
+        .attr('class', 'meter-bg')
+        .attr('width', boxWidth - 20)
+        .attr('height', 8)
+        .attr('y', 20);
+
+    memBar.append('rect')
+        .attr('class', 'meter-fill')
+        .attr('width', (boxWidth - 20) * (memUsage/100))
+        .attr('height', 8)
+        .attr('y', 20)
+        .attr('fill', memUsage > 90 ? '#ff4444' : memUsage > 70 ? '#ffaa00' : '#33ff33');
+
+    // GPU section
+    if (info.gpu_count > 0) {
+        const gpuSection = systemInfo.append('g')
+            .attr('transform', 'translate(0, 70)');
+
+        info.gpu_info.forEach((gpu, i) => {
+            const gpuGroup = gpuSection.append('g')
+                .attr('transform', `translate(0, ${i * 35})`);
+
+            gpuGroup.append('text')
+                .text(`GPU ${i+1}: ${gpu.name}`);
+
+            const memUsage = gpu.current_memory / gpu.total_memory * 100;
+            
+            gpuGroup.append('rect')
+                .attr('class', 'meter-bg')
+                .attr('width', boxWidth - 20)
+                .attr('height', 8)
+                .attr('y', 15);
+
+            gpuGroup.append('rect')
+                .attr('class', 'meter-fill')
+                .attr('width', (boxWidth - 20) * (memUsage/100))
+                .attr('height', 8)
+                .attr('y', 15)
+                .attr('fill', '#2196F3');
+
+            gpuGroup.append('text')
+                .attr('x', 0)
+                .attr('y', 35)
+                .attr('class', 'gpu-memory')
+                .style('font-size', '12px')
+                .text(`Memory: ${formatBytes(gpu.current_memory)} / ${formatBytes(gpu.total_memory)}`);
+        });
+    }
+
+    // Add connection status indicator
+    nodeGroup.append('circle')
+        .attr('class', 'status-indicator')
+        .attr('r', 5)
+        .attr('cx', boxWidth/2 - 15)
+        .attr('cy', -boxHeight/2 + 12)
+        .attr('fill', '#4CAF50');
+
+    // Add ASCII decorations
+    nodeGroup.append('text')
+        .attr('class', 'ascii-decoration')
+        .attr('x', -boxWidth/2)
+        .attr('y', -boxHeight/2 - 10)
+        .text(`+${'-'.repeat(Math.floor(boxWidth/8))}+`);
+}
+
 function updateVisualization(data) {
     if (!data || !data.nodes || !data.links) {
         console.warn('Invalid topology data received');
         return;
     }
 
+    // Update statistics
+    updateStats(data);
+
     // Clear previous content
     g.selectAll('*').remove();
-    
-    // Add cluster title
-    addClusterTitle(svg);
 
-    // Create node groups
+    // Create links first (so they're behind nodes)
+    const link = g.selectAll('.link')
+        .data(data.links)
+        .enter()
+        .append('g')
+        .attr('class', 'link');
+
+    // Add dotted lines
+    link.append('path')
+        .attr('class', 'link-path')
+        .attr('stroke-dasharray', '5,5');
+
+    // Create nodes
     const node = g.selectAll('.node')
         .data(data.nodes)
         .enter()
         .append('g')
-        .attr('class', 'node')
+        .attr('class', d => `node ${d.role}`)
+        .each(createNodeBox)
         .call(d3.drag()
             .on('start', dragstarted)
             .on('drag', dragged)
             .on('end', dragended));
-
-    // Add ASCII-style boxes for nodes
-    node.append('rect')
-        .attr('class', 'node-box')
-        .attr('width', 200)
-        .attr('height', 100)
-        .attr('x', -100)
-        .attr('y', -50);
-
-    // Add node labels with ASCII decorations
-    node.append('text')
-        .attr('y', -30)
-        .text(d => `+${'-'.repeat(20)}+`);
-
-    node.append('text')
-        .attr('y', -15)
-        .text(d => `| ${d.id.padEnd(18)} |`);
-
-    node.append('text')
-        .attr('y', 0)
-        .text(d => `| ${d.info.platform.padEnd(18)} |`);
-
-    // Add GPU meters
-    node.each(function(d) {
-        const nodeGroup = d3.select(this);
-        if (d.info.gpu_count > 0) {
-            const gpuBar = nodeGroup.append('g')
-                .attr('transform', 'translate(-80, 20)');
-            
-            gpuBar.append('text')
-                .text(`GPUs: [${d.info.gpu_info.map(g => g.name.slice(0, 10)).join(', ')}]`);
-
-            // Add GPU utilization meters
-            d.info.gpu_info.forEach((gpu, i) => {
-                const meter = gpuBar.append('g')
-                    .attr('transform', `translate(0, ${i * 15 + 10})`);
-
-                meter.append('rect')
-                    .attr('class', 'gpu-meter')
-                    .attr('width', 160)
-                    .attr('height', 10);
-
-                const usage = gpu.current_memory / gpu.total_memory * 100;
-                meter.append('rect')
-                    .attr('class', 'gpu-meter-fill')
-                    .attr('width', usage * 1.6)
-                    .attr('height', 10);
-            });
-        }
-    });
-
-    // Add ASCII-style connections
-    const link = g.selectAll('.link')
-        .data(data.links)
-        .enter()
-        .append('path')
-        .attr('class', 'link')
-        .attr('marker-end', 'url(#arrow)');
-
-    // Add arrow marker
-    svg.append('defs').append('marker')
-        .attr('id', 'arrow')
-        .attr('viewBox', '0 -5 10 10')
-        .attr('refX', 8)
-        .attr('refY', 0)
-        .attr('markerWidth', 6)
-        .attr('markerHeight', 6)
-        .attr('orient', 'auto')
-        .append('path')
-        .attr('fill', '#33ff33')
-        .attr('d', 'M0,-5L10,0L0,5');
 
     // Update force simulation
     simulation
         .nodes(data.nodes)
         .force('link').links(data.links);
 
+    // Update positions on tick
     simulation.on('tick', () => {
-        link.attr('d', d => {
-            const dx = d.target.x - d.source.x;
-            const dy = d.target.y - d.source.y;
-            const dr = Math.sqrt(dx * dx + dy * dy);
-            return `M${d.source.x},${d.source.y}A${dr},${dr} 0 0,1 ${d.target.x},${d.target.y}`;
-        });
+        link.select('path')
+            .attr('d', d => {
+                const dx = d.target.x - d.source.x;
+                const dy = d.target.y - d.source.y;
+                return `M${d.source.x},${d.source.y}L${d.target.x},${d.target.y}`;
+            });
 
         node.attr('transform', d => `translate(${d.x},${d.y})`);
     });
 
     simulation.alpha(1).restart();
 }
+
+// Add these styles
+const extraStyles = `
+    .node-box {
+        fill: rgba(0, 0, 0, 0.8);
+        stroke: #33ff33;
+        stroke-width: 2px;
+    }
+    .meter-bg {
+        fill: rgba(51, 255, 51, 0.1);
+        stroke: #33ff33;
+        stroke-width: 1px;
+    }
+    .meter-fill {
+        opacity: 0.7;
+    }
+    .link-path {
+        stroke: #33ff33;
+        stroke-width: 2px;
+    }
+    .node text {
+        fill: #33ff33;
+        font-family: 'Courier New', monospace;
+    }
+    .ascii-decoration {
+        fill: #33ff33;
+        opacity: 0.5;
+    }
+`;
+
+// Add the styles to the document
+const styleSheet = document.createElement('style');
+styleSheet.textContent = extraStyles;
+document.head.appendChild(styleSheet);
 
 // Drag functions
 function dragstarted(event, d) {

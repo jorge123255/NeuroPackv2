@@ -101,46 +101,69 @@
             .attr('class', d => 'node ' + d.role)
             .call(drag(simulation));
 
+        // Calculate node dimensions based on content
+        node.each(function(d) {
+            const gpuCount = d.info.gpu_count || 0;
+            d.nodeWidth = 220;
+            d.nodeHeight = 120 + gpuCount * 20;
+        });
+
         // Append rectangles
         node.append('rect')
-            .attr('width', 200)
-            .attr('height', 100)
-            .attr('x', -100)
-            .attr('y', -50)
+            .attr('width', d => d.nodeWidth)
+            .attr('height', d => d.nodeHeight)
+            .attr('x', d => -d.nodeWidth / 2)
+            .attr('y', d => -d.nodeHeight / 2)
             .attr('rx', 10)
             .attr('ry', 10)
             .style('fill', '#1a1a1a')
             .style('stroke', '#33ff33')
             .style('stroke-width', 2);
 
-        // Append text
+        // Append text elements
         node.append('text')
             .attr('text-anchor', 'middle')
-            .attr('dy', '-20')
+            .attr('dy', d => -d.nodeHeight / 2 + 20)
             .text(d => d.id)
             .style('fill', '#33ff33')
-            .style('font-size', '14px');
+            .style('font-size', '14px')
+            .style('font-weight', 'bold');
 
         node.append('text')
             .attr('text-anchor', 'middle')
-            .attr('dy', '0')
+            .attr('dy', d => -d.nodeHeight / 2 + 40)
             .text(d => `${d.info.hostname} (${d.role})`)
             .style('fill', '#33ff33')
             .style('font-size', '12px');
 
         node.append('text')
             .attr('text-anchor', 'middle')
-            .attr('dy', '20')
-            .text(d => `CPU: ${d.info.cpu_count} cores`)
+            .attr('dy', d => -d.nodeHeight / 2 + 60)
+            .text(d => `CPU: ${d.info.cpu_count} cores @ ${(d.info.cpu_freq / 1000).toFixed(2)} GHz`)
             .style('fill', '#33ff33')
             .style('font-size', '12px');
 
         node.append('text')
             .attr('text-anchor', 'middle')
-            .attr('dy', '40')
+            .attr('dy', d => -d.nodeHeight / 2 + 80)
             .text(d => `RAM: ${formatBytes(d.info.available_memory)} / ${formatBytes(d.info.total_memory)}`)
             .style('fill', '#33ff33')
             .style('font-size', '12px');
+
+        // Display GPU information if available
+        node.each(function(d) {
+            if (d.info.gpu_count > 0) {
+                const gpuGroup = d3.select(this);
+                d.info.gpu_info.forEach((gpu, i) => {
+                    gpuGroup.append('text')
+                        .attr('text-anchor', 'middle')
+                        .attr('dy', -d.nodeHeight / 2 + 100 + i * 20)
+                        .text(`GPU ${i + 1}: ${gpu.name}`)
+                        .style('fill', '#33ff33')
+                        .style('font-size', '12px');
+                });
+            }
+        });
 
         // Update positions
         simulation.on('tick', () => {
@@ -186,14 +209,23 @@
 
     function showTooltip(event, d) {
         const tooltip = d3.select('.tooltip');
+        let tooltipContent = `<strong>${d.id}</strong><br>
+                              Hostname: ${d.info.hostname}<br>
+                              Role: ${d.role}<br>
+                              CPU: ${d.info.cpu_count} cores @ ${(d.info.cpu_freq / 1000).toFixed(2)} GHz<br>
+                              RAM: ${formatBytes(d.info.available_memory)} / ${formatBytes(d.info.total_memory)}<br>`;
+        if (d.info.gpu_count > 0) {
+            tooltipContent += `<br><strong>GPU Information:</strong><br>`;
+            d.info.gpu_info.forEach((gpu, i) => {
+                tooltipContent += `GPU ${i + 1}: ${gpu.name}<br>
+                                   Memory: ${formatBytes(gpu.current_memory)} / ${formatBytes(gpu.total_memory)}<br>`;
+            });
+        }
+
         tooltip.style('display', 'block')
-            .style('left', (event.pageX + 10) + 'px')
-            .style('top', (event.pageY + 10) + 'px')
-            .html(`<strong>${d.id}</strong><br>
-                   Hostname: ${d.info.hostname}<br>
-                   Role: ${d.role}<br>
-                   CPU: ${d.info.cpu_count} cores<br>
-                   RAM: ${formatBytes(d.info.available_memory)} / ${formatBytes(d.info.total_memory)}<br>`);
+            .style('left', (event.pageX + 15) + 'px')
+            .style('top', (event.pageY + 15) + 'px')
+            .html(tooltipContent);
     }
 
     function hideTooltip() {

@@ -189,6 +189,131 @@ function addClusterTitle(svg) {
                    M-150,-20 L-150,20 M150,-20 L150,20`);
 }
 
+// Add terminal interface
+const terminal = d3.select('body')
+    .append('div')
+    .attr('class', 'terminal')
+    .style('position', 'fixed')
+    .style('bottom', '20px')
+    .style('left', '20px')
+    .style('width', '600px')
+    .style('background', 'rgba(0, 0, 0, 0.9)')
+    .style('border', '1px solid #33ff33')
+    .style('padding', '10px')
+    .style('font-family', 'Courier New, monospace')
+    .style('color', '#33ff33')
+    .style('z-index', '1000');
+
+terminal.append('div')
+    .attr('class', 'terminal-header')
+    .html(`
+        +${'-'.repeat(58)}+
+        |                    NeuroPack Terminal                    |
+        +${'-'.repeat(58)}+
+    `.replace(/\n/g, '<br>'));
+
+const terminalOutput = terminal.append('div')
+    .attr('class', 'terminal-output')
+    .style('max-height', '200px')
+    .style('overflow-y', 'auto')
+    .style('margin', '10px 0');
+
+const terminalInput = terminal.append('div')
+    .attr('class', 'terminal-input')
+    .style('display', 'flex');
+
+terminalInput.append('span')
+    .text('> ')
+    .style('color', '#33ff33')
+    .style('margin-right', '5px');
+
+const input = terminalInput.append('input')
+    .attr('type', 'text')
+    .style('background', 'transparent')
+    .style('border', 'none')
+    .style('color', '#33ff33')
+    .style('font-family', 'Courier New, monospace')
+    .style('width', '100%')
+    .style('outline', 'none');
+
+// Terminal command handling
+input.on('keypress', function(event) {
+    if (event.key === 'Enter') {
+        const command = this.value;
+        processCommand(command);
+        this.value = '';
+    }
+});
+
+function processCommand(command) {
+    terminalOutput.append('div')
+        .html(`> ${command}`);
+    
+    switch(command.toLowerCase()) {
+        case 'help':
+            showHelp();
+            break;
+        case 'status':
+            showClusterStatus();
+            break;
+        case 'models':
+            showModels();
+            break;
+        case 'clear':
+            terminalOutput.html('');
+            break;
+        default:
+            terminalOutput.append('div')
+                .style('color', '#ff4444')
+                .text('Unknown command. Type "help" for available commands.');
+    }
+    
+    // Scroll to bottom
+    terminalOutput.node().scrollTop = terminalOutput.node().scrollHeight;
+}
+
+function showHelp() {
+    terminalOutput.append('div')
+        .html(`
+            Available Commands:
+            - help    : Show this help message
+            - status  : Show cluster status
+            - models  : List available models
+            - clear   : Clear terminal
+        `);
+}
+
+// Add model information display
+const modelPanel = d3.select('body')
+    .append('div')
+    .attr('class', 'model-panel')
+    .style('position', 'fixed')
+    .style('left', '20px')
+    .style('top', '100px')
+    .style('background', 'rgba(0, 0, 0, 0.9)')
+    .style('border', '1px solid #33ff33')
+    .style('padding', '15px')
+    .style('font-family', 'Courier New, monospace')
+    .style('color', '#33ff33');
+
+function updateModelPanel(data) {
+    const allModels = new Set();
+    data.nodes.forEach(node => {
+        if (node.info.supported_models) {
+            node.info.supported_models.forEach(model => allModels.add(model));
+        }
+    });
+
+    modelPanel.html(`
+        +${'-'.repeat(30)}+
+        |      Available Models      |
+        +${'-'.repeat(30)}+
+        ${Array.from(allModels).map(model => `| ${model.padEnd(28)} |`).join('\n')}
+        +${'-'.repeat(30)}+
+    `.replace(/\n/g, '<br>'));
+}
+
+// Enhanced node box creation
 function createNodeBox(node) {
     const nodeGroup = d3.select(this);
     const info = node.info;
@@ -305,8 +430,67 @@ function createNodeBox(node) {
         .attr('x', -boxWidth/2)
         .attr('y', -boxHeight/2 - 10)
         .text(`+${'-'.repeat(Math.floor(boxWidth/8))}+`);
+
+    // Add model information
+    if (node.info.loaded_models) {
+        const modelSection = systemInfo.append('g')
+            .attr('transform', `translate(0, ${info.gpu_count > 0 ? 180 : 120})`);
+
+        modelSection.append('text')
+            .text('Loaded Models:');
+
+        Object.entries(node.info.loaded_models).forEach(([name, model], i) => {
+            modelSection.append('text')
+                .attr('y', (i + 1) * 20)
+                .text(`${name} (${model.type})`);
+        });
+    }
+
+    // Add real-time metrics
+    const metricsSection = nodeGroup.append('g')
+        .attr('class', 'metrics')
+        .attr('transform', `translate(${boxWidth/2 - 60}, -${boxHeight/2 + 15})`);
+
+    // CPU usage indicator
+    const cpuMeter = metricsSection.append('g');
+    cpuMeter.append('rect')
+        .attr('class', 'meter-bg')
+        .attr('width', 50)
+        .attr('height', 8);
+
+    cpuMeter.append('rect')
+        .attr('class', 'meter-fill cpu-meter')
+        .attr('width', 0)
+        .attr('height', 8);
+
+    // Add ASCII decorations
+    const decorations = [
+        { x: -boxWidth/2, y: -boxHeight/2, char: '+' },
+        { x: boxWidth/2, y: -boxHeight/2, char: '+' },
+        { x: -boxWidth/2, y: boxHeight/2, char: '+' },
+        { x: boxWidth/2, y: boxHeight/2, char: '+' }
+    ];
+
+    decorations.forEach(d => {
+        nodeGroup.append('text')
+            .attr('class', 'ascii-decoration')
+            .attr('x', d.x)
+            .attr('y', d.y)
+            .text(d.char);
+    });
 }
 
+// Add real-time updates
+function startRealtimeUpdates() {
+    setInterval(() => {
+        d3.selectAll('.cpu-meter')
+            .transition()
+            .duration(1000)
+            .attr('width', () => Math.random() * 50);
+    }, 2000);
+}
+
+// Enhanced visualization update
 function updateVisualization(data) {
     if (!data || !data.nodes || !data.links) {
         console.warn('Invalid topology data received');
@@ -361,6 +545,12 @@ function updateVisualization(data) {
     });
 
     simulation.alpha(1).restart();
+
+    // Update model panel
+    updateModelPanel(data);
+    
+    // Start real-time updates
+    startRealtimeUpdates();
 }
 
 // Add these styles
@@ -523,3 +713,38 @@ function showDetailedMetrics(node) {
     // Cleanup on close
     detailsPanel.on('remove', () => clearInterval(updateInterval));
 }
+
+// Add keyboard shortcuts
+document.addEventListener('keydown', (event) => {
+    if (event.key === 't') {
+        terminal.style('display', 
+            terminal.style('display') === 'none' ? 'block' : 'none');
+    }
+});
+
+// Add these styles
+const additionalStyles = `
+    .terminal-output div {
+        margin: 2px 0;
+    }
+    .meter-bg {
+        fill: rgba(51, 255, 51, 0.1);
+        stroke: #33ff33;
+    }
+    .meter-fill {
+        fill: #33ff33;
+    }
+    .ascii-decoration {
+        fill: #33ff33;
+        font-family: 'Courier New', monospace;
+    }
+    .model-panel {
+        max-height: 400px;
+        overflow-y: auto;
+    }
+`;
+
+// Add the styles to the document
+const additionalStyleSheet = document.createElement('style');
+additionalStyleSheet.textContent = additionalStyles;
+document.head.appendChild(additionalStyleSheet);

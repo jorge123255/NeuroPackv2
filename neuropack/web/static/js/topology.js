@@ -519,6 +519,145 @@ function initializeNodePositions(nodes) {
     }
 }
 
+// Create a more terminal-style layout
+function createTerminalLayout(data) {
+    // Clear previous content
+    g.selectAll('*').remove();
+
+    const masterNode = data.nodes.find(n => n.role === 'master');
+    const workerNodes = data.nodes.filter(n => n.role !== 'master');
+
+    // Create ASCII art header
+    const header = g.append('g')
+        .attr('class', 'cluster-header')
+        .attr('transform', `translate(${width/2}, 60)`);
+
+    header.append('text')
+        .attr('text-anchor', 'middle')
+        .attr('class', 'cluster-title')
+        .text(`Exo Cluster (${data.nodes.length} nodes)`);
+
+    // Create master node box
+    if (masterNode) {
+        const masterBox = createNodeBox(masterNode, width/2, 150);
+        
+        // Create connection lines to worker nodes
+        workerNodes.forEach((worker, i) => {
+            const y = 300 + i * 180;
+            const workerBox = createNodeBox(worker, width/2, y);
+            
+            // Create ASCII connection line
+            createConnectionLine(width/2, 200, width/2, y - 50);
+        });
+    }
+
+    // Add cluster stats
+    createClusterStats(data, 20, 20);
+}
+
+function createNodeBox(node, x, y) {
+    const boxGroup = g.append('g')
+        .attr('class', `node ${node.role}`)
+        .attr('transform', `translate(${x}, ${y})`);
+
+    const info = node.info;
+    const lines = [
+        `+${'-'.repeat(58)}+`,
+        `| ${node.id.padEnd(56)} |`,
+        `| ${info.hostname} (${node.role})${' '.repeat(45-info.hostname.length)} |`,
+        `+${'-'.repeat(58)}+`,
+        `| CPU: ${info.cpu_count} cores @ ${(info.cpu_freq/1000).toFixed(2)} GHz${' '.repeat(35)} |`,
+        `| RAM: ${formatBytes(info.available_memory)} / ${formatBytes(info.total_memory)}${' '.repeat(25)} |`
+    ];
+
+    // Add GPU information if available
+    if (info.gpu_count > 0) {
+        info.gpu_info.forEach((gpu, i) => {
+            lines.push(`| GPU ${i+1}: ${gpu.name}${' '.repeat(Math.max(0, 53-gpu.name.length))} |`);
+            // Add GPU memory bar
+            const memUsage = gpu.current_memory / gpu.total_memory * 100;
+            const barWidth = 40;
+            const filledChars = Math.floor(memUsage * barWidth / 100);
+            const bar = '[' + '='.repeat(filledChars) + ' '.repeat(barWidth - filledChars) + ']';
+            lines.push(`| Memory: ${bar} ${memUsage.toFixed(1)}%${' '.repeat(8)} |`);
+        });
+    }
+
+    lines.push(`+${'-'.repeat(58)}+`);
+
+    // Add status indicator
+    const statusColor = node.role === 'master' ? '#ff4444' : '#4CAF50';
+    boxGroup.append('circle')
+        .attr('r', 5)
+        .attr('cx', -140)
+        .attr('cy', 0)
+        .attr('fill', statusColor);
+
+    // Add box text
+    lines.forEach((line, i) => {
+        boxGroup.append('text')
+            .attr('x', -130)
+            .attr('y', (i - lines.length/2) * 20)
+            .attr('class', 'node-text')
+            .text(line);
+    });
+
+    return boxGroup;
+}
+
+function createConnectionLine(x1, y1, x2, y2) {
+    const points = [];
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const steps = Math.abs(dy) / 20;
+
+    for (let i = 0; i <= steps; i++) {
+        points.push([x1, y1 + (dy * i / steps)]);
+    }
+
+    const line = g.append('g').attr('class', 'connection');
+
+    // Create dotted line effect using ASCII characters
+    points.forEach((point, i) => {
+        if (i % 2 === 0) {
+            line.append('text')
+                .attr('x', point[0])
+                .attr('y', point[1])
+                .attr('text-anchor', 'middle')
+                .attr('class', 'connection-text')
+                .text('|');
+        }
+    });
+}
+
+function createClusterStats(data, x, y) {
+    const totalCPUs = data.nodes.reduce((acc, n) => acc + n.info.cpu_count, 0);
+    const totalGPUs = data.nodes.reduce((acc, n) => acc + n.info.gpu_count, 0);
+    const totalMemory = data.nodes.reduce((acc, n) => acc + n.info.total_memory, 0);
+
+    const statsGroup = g.append('g')
+        .attr('class', 'cluster-stats')
+        .attr('transform', `translate(${x}, ${y})`);
+
+    const lines = [
+        `+${'-'.repeat(30)}+`,
+        '| Cluster Statistics        |',
+        `+${'-'.repeat(30)}+`,
+        `| Nodes: ${data.nodes.length.toString().padEnd(20)} |`,
+        `| CPUs:  ${totalCPUs.toString().padEnd(20)} |`,
+        `| GPUs:  ${totalGPUs.toString().padEnd(20)} |`,
+        `| RAM:   ${formatBytes(totalMemory).padEnd(20)} |`,
+        `+${'-'.repeat(30)}+`
+    ];
+
+    lines.forEach((line, i) => {
+        statsGroup.append('text')
+            .attr('y', i * 20)
+            .attr('class', 'stats-text')
+            .text(line);
+    });
+}
+
 // Update visualization function
 function updateVisualization(data) {
     if (!data || !data.nodes || !data.links) {
@@ -526,60 +665,36 @@ function updateVisualization(data) {
         return;
     }
 
-    // Initialize fixed positions
-    initializeNodePositions(data.nodes);
-
-    // Clear previous content
-    g.selectAll('*').remove();
-
-    // Create curved links
-    const link = g.selectAll('.link')
-        .data(data.links)
-        .enter()
-        .append('path')
-        .attr('class', 'link')
-        .attr('stroke-dasharray', '5,5');
-
-    // Create nodes (without drag behavior)
-    const node = g.selectAll('.node')
-        .data(data.nodes)
-        .enter()
-        .append('g')
-        .attr('class', d => `node ${d.role}`)
-        .each(createNodeBox);
-
-    // Update positions immediately
-    node.attr('transform', d => `translate(${d.fx},${d.fy})`);
-
-    // Update link paths
-    link.attr('d', d => {
-        const dx = d.target.fx - d.source.fx;
-        const dy = d.target.fy - d.source.fy;
-        const dr = Math.sqrt(dx * dx + dy * dy) * 1.2; // Curved lines
-        return `M${d.source.fx},${d.source.fy}A${dr},${dr} 0 0,1 ${d.target.fx},${d.target.fy}`;
-    });
-
-    // Add hover effects
-    node.on('mouseover', function(event, d) {
-            d3.select(this)
-                .transition()
-                .duration(200)
-                .style('filter', 'brightness(1.2)');
-            showTooltip(d);
-        })
-        .on('mouseout', function(event, d) {
-            d3.select(this)
-                .transition()
-                .duration(200)
-                .style('filter', null);
-            hideTooltip();
-        });
-
-    // Update stats and model panel
-    updateStats(data);
-    updateModelPanel(data);
-    startRealtimeUpdates();
+    createTerminalLayout(data);
 }
+
+// Add styles
+const terminalStyles = `
+    .node-text {
+        font-family: 'Courier New', monospace;
+        fill: #33ff33;
+        font-size: 14px;
+    }
+    .connection-text {
+        font-family: 'Courier New', monospace;
+        fill: #33ff33;
+        font-size: 14px;
+    }
+    .stats-text {
+        font-family: 'Courier New', monospace;
+        fill: #33ff33;
+        font-size: 14px;
+    }
+    .cluster-title {
+        font-family: 'Courier New', monospace;
+        fill: #33ff33;
+        font-size: 18px;
+    }
+`;
+
+const styleSheet = document.createElement('style');
+styleSheet.textContent = terminalStyles;
+document.head.appendChild(styleSheet);
 
 // Remove drag-related functions and simplify the simulation
 simulation.on('tick', () => {

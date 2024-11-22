@@ -11,6 +11,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
 import os
 
+# Initialize logger
+logger = logging.getLogger(__name__)
+
 class TopologyServer:
     def __init__(self, host="0.0.0.0", port=8080):
         self.host = host
@@ -34,7 +37,9 @@ class TopologyServer:
             try:
                 while True:
                     await websocket.receive_text()  # Keep connection alive
-            except:
+            except Exception as e:
+                logger.error(f"WebSocket error: {e}")
+            finally:
                 self.connections.remove(websocket)
                 
     async def broadcast_topology(self, topology_data):
@@ -52,6 +57,11 @@ class TopologyServer:
         
         # Cleanup dead connections
         self.connections -= dead_connections
+
+    def run(self):
+        """Run the web server"""
+        logger.info(f"Starting web server on {self.host}:{self.port}")
+        uvicorn.run(self.app, host=self.host, port=self.port)
 
     def _get_default_html(self):
         """Return enhanced HTML template"""
@@ -140,9 +150,6 @@ class TopologyServer:
         </html>
         """
         
-    def run(self):
-        uvicorn.run(self.app, host=self.host, port=self.port)
-
 if __name__ == "__main__":
     server = TopologyServer()
     server.run() 

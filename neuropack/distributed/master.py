@@ -119,7 +119,16 @@ class MasterNode(Node):
             }
             
             logger.info(f"Broadcasting topology: {len(self.nodes)} nodes")
+            logger.debug(f"Topology data: {topology}")
             await self.web_server.broadcast_topology(topology)
+            
+            # Also broadcast to connected nodes
+            message = json.dumps({'type': 'topology', 'data': topology})
+            for connection in self.connections.values():
+                try:
+                    await connection.send(message)
+                except Exception as e:
+                    logger.error(f"Failed to send topology to node: {e}")
             
         except Exception as e:
             logger.error(f"Error broadcasting topology: {e}", exc_info=True)

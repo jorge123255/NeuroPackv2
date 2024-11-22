@@ -70,6 +70,17 @@
         };
     }
 
+    // Add to the top of the file, after the initial const declarations
+    const COLORS = {
+        master: '#00ff00',
+        worker: '#33ff99',
+        text: '#33ff33',
+        border: '#33ff33',
+        background: '#0a0a0a',
+        link: '#1a6b1a'
+    };
+
+    // Update the node styling and add pulsing effect
     function updateVisualization(data) {
         if (!data || !data.nodes || !data.links) {
             console.warn('Invalid topology data received');
@@ -85,30 +96,45 @@
             .force('charge', d3.forceManyBody().strength(-500))
             .force('center', d3.forceCenter(width / 2, height / 2));
 
-        // Create links
+        // Update link styling
         const link = g.selectAll('.link')
             .data(data.links)
             .enter().append('line')
             .attr('class', 'link')
-            .style('stroke', '#999')
+            .style('stroke', COLORS.link)
             .style('stroke-opacity', 0.6)
-            .style('stroke-width', 2);
+            .style('stroke-width', 2)
+            .style('stroke-dasharray', '5,5');
 
-        // Create nodes
+        // Update node styling
         const node = g.selectAll('.node')
             .data(data.nodes)
             .enter().append('g')
             .attr('class', d => 'node ' + d.role)
             .call(drag(simulation));
 
-        // Calculate node dimensions based on content
+        // Calculate node dimensions
         node.each(function(d) {
-            const gpuCount = d.info.gpu_count || 0;
-            d.nodeWidth = 220;
-            d.nodeHeight = 120 + gpuCount * 20;
+            const gpuCount = d.info.gpu_info?.length || 0;
+            d.nodeWidth = 240;
+            d.nodeHeight = 140 + (gpuCount * 20);
         });
 
-        // Append rectangles
+        // Add glowing rectangle behind main rectangle
+        node.append('rect')
+            .attr('class', 'glow')
+            .attr('width', d => d.nodeWidth + 4)
+            .attr('height', d => d.nodeHeight + 4)
+            .attr('x', d => -d.nodeWidth / 2 - 2)
+            .attr('y', d => -d.nodeHeight / 2 - 2)
+            .attr('rx', 12)
+            .attr('ry', 12)
+            .style('fill', 'none')
+            .style('stroke', d => d.role === 'master' ? COLORS.master : COLORS.worker)
+            .style('stroke-width', 2)
+            .style('filter', 'url(#glow)');
+
+        // Add main rectangle
         node.append('rect')
             .attr('width', d => d.nodeWidth)
             .attr('height', d => d.nodeHeight)
@@ -116,16 +142,51 @@
             .attr('y', d => -d.nodeHeight / 2)
             .attr('rx', 10)
             .attr('ry', 10)
-            .style('fill', '#1a1a1a')
-            .style('stroke', '#33ff33')
+            .style('fill', COLORS.background)
+            .style('stroke', d => d.role === 'master' ? COLORS.master : COLORS.worker)
             .style('stroke-width', 2);
+
+        // Add GPU information display
+        node.each(function(d) {
+            const gpus = d.info.gpu_info || [];
+            if (gpus.length > 0) {
+                const gpuGroup = d3.select(this);
+                gpus.forEach((gpu, i) => {
+                    gpuGroup.append('text')
+                        .attr('text-anchor', 'middle')
+                        .attr('dy', -d.nodeHeight / 2 + 100 + i * 20)
+                        .text(`GPU ${i + 1}: ${gpu.name} (${formatBytes(gpu.current_memory)}/${formatBytes(gpu.total_memory)})`)
+                        .style('fill', COLORS.text)
+                        .style('font-size', '12px');
+                });
+            }
+        });
+
+        // Add SVG filters for glow effect
+        const defs = svg.append('defs');
+        const filter = defs.append('filter')
+            .attr('id', 'glow');
+
+        filter.append('feGaussianBlur')
+            .attr('stdDeviation', '2')
+            .attr('result', 'coloredBlur');
+
+        const feMerge = filter.append('feMerge');
+        feMerge.append('feMergeNode')
+            .attr('in', 'coloredBlur');
+        feMerge.append('feMergeNode')
+            .attr('in', 'SourceGraphic');
+
+        // Add pulsing animation
+        node.selectAll('.glow')
+            .style('animation', 'pulse 2s infinite');
 
         // Append text elements
         node.append('text')
             .attr('text-anchor', 'middle')
             .attr('dy', d => -d.nodeHeight / 2 + 20)
             .text(d => d.id)
-            .style('fill', '#33ff33')
+            .style('fill', COLORS.text)
             .style('font-size', '14px')
             .style('font-weight', 'bold');
 
@@ -133,37 +194,22 @@
             .attr('text-anchor', 'middle')
             .attr('dy', d => -d.nodeHeight / 2 + 40)
             .text(d => `${d.info.hostname} (${d.role})`)
-            .style('fill', '#33ff33')
+            .style('fill', COLORS.text)
             .style('font-size', '12px');
 
         node.append('text')
             .attr('text-anchor', 'middle')
             .attr('dy', d => -d.nodeHeight / 2 + 60)
             .text(d => `CPU: ${d.info.cpu_count} cores @ ${(d.info.cpu_freq / 1000).toFixed(2)} GHz`)
-            .style('fill', '#33ff33')
+            .style('fill', COLORS.text)
             .style('font-size', '12px');
 
         node.append('text')
             .attr('text-anchor', 'middle')
             .attr('dy', d => -d.nodeHeight / 2 + 80)
             .text(d => `RAM: ${formatBytes(d.info.available_memory)} / ${formatBytes(d.info.total_memory)}`)
-            .style('fill', '#33ff33')
+            .style('fill', COLORS.text)
             .style('font-size', '12px');
-
-        // Display GPU information if available
-        node.each(function(d) {
-            if (d.info.gpu_count > 0) {
-                const gpuGroup = d3.select(this);
-                d.info.gpu_info.forEach((gpu, i) => {
-                    gpuGroup.append('text')
-                        .attr('text-anchor', 'middle')
-                        .attr('dy', -d.nodeHeight / 2 + 100 + i * 20)
-                        .text(`GPU ${i + 1}: ${gpu.name}`)
-                        .style('fill', '#33ff33')
-                        .style('font-size', '12px');
-                });
-            }
-        });
 
         // Update positions
         simulation.on('tick', () => {

@@ -456,119 +456,165 @@ function addMetricBar(group, label, value, yOffset) {
         .text(`${value.toFixed(1)}%`);
 }
 
-// Create ASCII-style link path with dots and lines
+// Create ASCII-style link path with better terminal aesthetics
 function createASCIILink(x1, y1, x2, y2) {
     const g = d3.select(this);
     const dx = x2 - x1;
     const dy = y2 - y1;
     const distance = Math.sqrt(dx * dx + dy * dy);
-    const segments = Math.floor(distance / 30); // One dot every 30 pixels
+    const segments = Math.floor(distance / 20); // More frequent dots
     
-    // Create dotted path
-    let pathData = `M ${x1},${y1} `;
-    for (let i = 1; i <= segments; i++) {
-        const t = i / segments;
-        const x = x1 + dx * t;
-        const y = y1 + dy * t;
-        pathData += `L ${x},${y} `;
-    }
-    pathData += `L ${x2},${y2}`;
+    // Calculate angle for proper character orientation
+    const angle = Math.atan2(dy, dx);
+    
+    // Choose characters based on angle
+    let linkChar;
+    if (Math.abs(angle) < Math.PI / 8) linkChar = '─';
+    else if (Math.abs(angle - Math.PI) < Math.PI / 8) linkChar = '─';
+    else if (Math.abs(angle - Math.PI/2) < Math.PI / 8) linkChar = '│';
+    else if (Math.abs(angle + Math.PI/2) < Math.PI / 8) linkChar = '│';
+    else if (angle > 0) linkChar = '\\';
+    else linkChar = '/';
 
-    // Add dots along the path
+    // Create connection line with ASCII characters
     for (let i = 0; i <= segments; i++) {
         const t = i / segments;
         const x = x1 + dx * t;
         const y = y1 + dy * t;
+        
+        // Alternate between different characters for animation effect
+        const char = i % 2 === 0 ? linkChar : '·';
+        
         g.append('text')
             .attr('x', x)
             .attr('y', y)
             .attr('class', 'ascii-link')
             .attr('text-anchor', 'middle')
-            .text('●');
+            .text(char)
+            .style('animation', `blink ${1 + Math.random()}s infinite`);
     }
 
-    // Add connection status indicators
+    // Add connection status with ASCII border
     const midX = (x1 + x2) / 2;
     const midY = (y1 + y2) / 2;
-    g.append('text')
-        .attr('x', midX)
-        .attr('y', midY - 10)
-        .attr('class', 'ascii-link-status')
-        .attr('text-anchor', 'middle')
-        .text('[CONNECTED]');
+    
+    // Create status box
+    const statusLines = [
+        '┌──────────────┐',
+        '│  CONNECTED   │',
+        '└──────────────┘'
+    ];
 
-    return pathData;
+    statusLines.forEach((line, i) => {
+        g.append('text')
+            .attr('x', midX)
+            .attr('y', midY - 20 + (i * 15))
+            .attr('class', 'ascii-link-status')
+            .attr('text-anchor', 'middle')
+            .text(line);
+    });
+
+    // Add data flow animation
+    const flowChars = ['◢', '◣', '◤', '◥'];
+    for (let i = 0; i < 3; i++) {
+        g.append('text')
+            .attr('class', 'data-flow')
+            .attr('text-anchor', 'middle')
+            .text(flowChars[i % flowChars.length])
+            .attr('x', x1 + (dx * (i + 1) / 4))
+            .attr('y', y1 + (dy * (i + 1) / 4))
+            .style('animation', `flow ${2 + i * 0.5}s infinite linear`);
+    }
 }
 
-// Update the visualization function
+// Update the visualization function with better node positioning
 function updateVisualization(data) {
     if (!data || !data.nodes || !data.links) {
         console.warn('Invalid topology data received');
         return;
     }
 
-    // Update nodes
-    const nodeElements = g.selectAll('.node')
-        .data(data.nodes, d => d.id);
-
-    // Remove old nodes
-    nodeElements.exit().remove();
-
-    // Add new nodes with fixed positions
-    const nodeEnter = nodeElements.enter()
-        .append('g')
-        .attr('class', 'node');
+    // Clear previous visualization
+    g.selectAll('*').remove();
 
     // Position nodes
     const masterNode = data.nodes.find(n => n.role === 'master');
     const workerNodes = data.nodes.filter(n => n.role !== 'master');
 
+    // Create master node box at center-top
     if (masterNode) {
-        masterNode.fx = width / 2;
-        masterNode.fy = height / 3;
+        const masterGroup = g.append('g')
+            .attr('class', 'node master')
+            .attr('transform', `translate(${width/2}, ${height/4})`);
+        
+        createNodeBox.call(masterGroup.node(), masterNode);
     }
 
     // Position worker nodes in a semi-circle below master
     workerNodes.forEach((node, i) => {
-        const angle = (Math.PI / (workerNodes.length + 1)) * (i + 1);
-        const radius = 300;
-        node.fx = width/2 + radius * Math.cos(angle);
-        node.fy = height/3 + radius * Math.sin(angle);
+        const totalWorkers = workerNodes.length;
+        const angle = ((Math.PI) / Math.max(1, totalWorkers - 1)) * i - Math.PI/2;
+        const radius = 400;
+        const x = width/2 + radius * Math.cos(angle);
+        const y = height/2 + radius * Math.sin(angle);
+
+        const workerGroup = g.append('g')
+            .attr('class', 'node worker')
+            .attr('transform', `translate(${x}, ${y})`);
+        
+        createNodeBox.call(workerGroup.node(), node);
     });
 
-    // Create node boxes
-    nodeElements.merge(nodeEnter).each(createNodeBox);
+    // Create links with ASCII art
+    data.links.forEach(link => {
+        const source = data.nodes.find(n => n.id === link.source);
+        const target = data.nodes.find(n => n.id === link.target);
+        
+        if (source && target) {
+            const linkGroup = g.append('g')
+                .attr('class', 'link-group');
 
-    // Update links with ASCII style
-    const linkElements = g.selectAll('.link-group')
-        .data(data.links, d => `${d.source}-${d.target}`);
+            // Calculate source and target positions
+            const sourcePos = source.role === 'master' ? 
+                { x: width/2, y: height/4 } :
+                { x: width/2 + 400 * Math.cos(((Math.PI) / (workerNodes.length - 1)) * workerNodes.findIndex(n => n.id === source.id) - Math.PI/2),
+                  y: height/2 + 400 * Math.sin(((Math.PI) / (workerNodes.length - 1)) * workerNodes.findIndex(n => n.id === source.id) - Math.PI/2) };
+            
+            const targetPos = target.role === 'master' ?
+                { x: width/2, y: height/4 } :
+                { x: width/2 + 400 * Math.cos(((Math.PI) / (workerNodes.length - 1)) * workerNodes.findIndex(n => n.id === target.id) - Math.PI/2),
+                  y: height/2 + 400 * Math.sin(((Math.PI) / (workerNodes.length - 1)) * workerNodes.findIndex(n => n.id === target.id) - Math.PI/2) };
 
-    // Remove old links
-    linkElements.exit().remove();
+            // Create ASCII connection
+            const dx = targetPos.x - sourcePos.x;
+            const dy = targetPos.y - sourcePos.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const segments = Math.floor(distance / 30);
 
-    // Add new links
-    const linkEnter = linkElements.enter()
-        .append('g')
-        .attr('class', 'link-group');
+            for (let i = 0; i <= segments; i++) {
+                const t = i / segments;
+                const x = sourcePos.x + dx * t;
+                const y = sourcePos.y + dy * t;
+                
+                linkGroup.append('text')
+                    .attr('class', 'ascii-link')
+                    .attr('x', x)
+                    .attr('y', y)
+                    .attr('text-anchor', 'middle')
+                    .text(i % 2 === 0 ? '┄' : '┈')
+                    .style('animation', `blink ${1 + Math.random()}s infinite`);
+            }
 
-    // Create the base link path
-    linkEnter.append('path')
-        .attr('class', 'link-path')
-        .attr('stroke', '#33ff33')
-        .attr('stroke-width', 1)
-        .attr('fill', 'none');
+            // Add connection status
+            const midX = sourcePos.x + dx / 2;
+            const midY = sourcePos.y + dy / 2;
 
-    // Update all links
-    linkElements.merge(linkEnter).each(function(d) {
-        const sourceNode = data.nodes.find(n => n.id === d.source);
-        const targetNode = data.nodes.find(n => n.id === d.target);
-        if (sourceNode && targetNode) {
-            const pathData = createASCIILink.call(this, 
-                sourceNode.fx, sourceNode.fy,
-                targetNode.fx, targetNode.fy
-            );
-            d3.select(this).select('.link-path')
-                .attr('d', pathData);
+            linkGroup.append('text')
+                .attr('class', 'ascii-link-status')
+                .attr('x', midX)
+                .attr('y', midY)
+                .attr('text-anchor', 'middle')
+                .text('⟷ CONNECTED ⟷');
         }
     });
 
@@ -622,21 +668,35 @@ const styles = `
     }
     .ascii-link {
         fill: #33ff33;
-        font-size: 8px;
+        font-size: 14px;
+        font-family: 'Courier New', monospace;
         pointer-events: none;
     }
     .ascii-link-status {
         fill: #33ff33;
-        font-size: 10px;
+        font-size: 12px;
         font-family: 'Courier New', monospace;
     }
-    .link-path {
-        stroke-dasharray: 5,5;
-        animation: dash 20s linear infinite;
+    .data-flow {
+        fill: #33ff33;
+        font-size: 12px;
+        opacity: 0.8;
     }
-    @keyframes dash {
-        to {
-            stroke-dashoffset: 1000;
+    @keyframes blink {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.3; }
+    }
+    @keyframes flow {
+        from { 
+            transform: translate(0, 0); 
+            opacity: 0;
+        }
+        50% { 
+            opacity: 1;
+        }
+        to { 
+            transform: translate(20px, 0);
+            opacity: 0;
         }
     }
 `;

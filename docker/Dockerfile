@@ -1,5 +1,5 @@
 # Use the official Ubuntu image as the base
-FROM ubuntu:latest
+FROM nvidia/cuda:11.8.0-runtime-ubuntu22.04
 
 # System packages
 RUN apt-get update && \
@@ -8,14 +8,14 @@ RUN apt-get update && \
     python3-pip \
     python3-dev \
     python3-venv \
+    python3-distutils \
+    python3-distutils-extra \
     build-essential \
     git \
     openssh-server \
     vim \
     nano \
-    curl \
-    nvidia-cuda-toolkit \
-    nvidia-cuda-toolkit-gcc && \
+    curl && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -41,10 +41,10 @@ RUN python3 -m venv /app/venv
 ENV PATH="/app/venv/bin:$PATH"
 
 # Upgrade pip first
-RUN /app/venv/bin/pip install --upgrade pip
+RUN /app/venv/bin/pip install --upgrade pip setuptools wheel
 
 # Install PyTorch with CUDA support
-RUN /app/venv/bin/pip3 install --no-cache-dir \
+RUN /app/venv/bin/pip install --no-cache-dir \
     torch==2.2.2+cu118 \
     torchvision==0.17.2+cu118 \
     torchaudio==2.2.2 \
@@ -68,24 +68,14 @@ EXPOSE 22
 # Start SSH server
 CMD ["sh", "-c", "if [ ! -f /etc/ssh/keys/ssh_host_rsa_key ]; then ssh-keygen -f /etc/ssh/keys/ssh_host_rsa_key -N '' -t rsa && ssh-keygen -f /etc/ssh/keys/ssh_host_ecdsa_key -N '' -t ecdsa && ssh-keygen -f /etc/ssh/keys/ssh_host_ed25519_key -N '' -t ed25519; fi && /usr/sbin/sshd -D"]
 
-# After PyTorch installation
-RUN /app/venv/bin/pip3 install --no-cache-dir \
+# Install additional Python packages after PyTorch installation
+RUN /app/venv/bin/pip install --no-cache-dir \
     'numpy<2.0' \
     psutil>=5.9.0 \
     GPUtil>=1.4.0 \
     aiohttp>=3.8.0 \
     asyncio>=3.4.3 \
-    zeroconf>=0.39.0
-
-# Add distributed node management packages
-RUN /app/venv/bin/pip3 install --no-cache-dir \
-    websockets>=11.0.3 \
-    fastapi>=0.104.1 \
-    uvicorn>=0.24.0 \
-    networkx>=3.2.1
-
-# Add web interface dependencies
-RUN /app/venv/bin/pip3 install --no-cache-dir \
+    zeroconf>=0.39.0 \
     websockets>=11.0.3 \
     fastapi>=0.104.1 \
     uvicorn>=0.24.0 \

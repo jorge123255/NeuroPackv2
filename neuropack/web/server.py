@@ -25,7 +25,14 @@ class TopologyServer:
             
         @self.app.websocket("/ws")
         async def websocket_endpoint(websocket: WebSocket):
-            await self._handle_websocket(websocket)
+            await websocket.accept()
+            try:
+                while True:
+                    data = await websocket.receive_text()
+                    # Handle the data
+                    await websocket.send_text(f"Message received: {data}")
+            except WebSocketDisconnect:
+                pass
 
     def _get_index_html(self):
         """Return the index.html content"""

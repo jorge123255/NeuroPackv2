@@ -19,7 +19,7 @@ class MasterNode(Node):
         self.is_master = True
         self.nodes: Dict[str, DeviceInfo] = {}
         self.connections: Dict[str, websockets.WebSocketServerProtocol] = {}
-        self.web_server = None  # Will be initialized in start()
+        self.web_server = None
         
     async def start(self):
         """Start the master node and web interface"""
@@ -30,26 +30,12 @@ class MasterNode(Node):
         
         # Create web server in the same event loop
         self.web_server = TopologyServer(host=self.host, port=self.web_port)
-        web_task = asyncio.create_task(self.web_server.start())
         
-        # Start WebSocket server
-        ws_server = await websockets.serve(
-            self.handle_connection, 
-            self.host, 
-            self.port
+        # Start both servers concurrently
+        await asyncio.gather(
+            self.web_server.start(),
+            websockets.serve(self.handle_connection, self.host, self.port)
         )
-        
-        logger.info(f"WebSocket server listening on ws://{self.host}:{self.port}")
-        logger.info(f"Web interface available at http://{self.host}:{self.web_port}")
-        
-        # Initial topology broadcast
-        await self.broadcast_topology()
-        
-        # Keep running
-        try:
-            await asyncio.gather(web_task, ws_server.wait_closed())
-        except asyncio.CancelledError:
-            logger.info("Shutting down servers...")
         
     async def handle_connection(self, websocket: websockets.WebSocketServerProtocol):
         """Handle incoming WebSocket connections"""
@@ -71,8 +57,7 @@ class MasterNode(Node):
                 
                 try:
                     async for message in websocket:
-                        data = json.loads(message)
-                        await self.handle_message(node_id, data)
+                        await self.handle_message(node_id, message)
                 except websockets.ConnectionClosed:
                     logger.info(f"Node {node_id} disconnected")
                 finally:
@@ -90,6 +75,27 @@ class MasterNode(Node):
                 if node_id in self.nodes:
                     del self.nodes[node_id]
                 await self.broadcast_topology()
+
+    async def handle_message(self, node_id: str, message: str):
+        """Handle incoming messages from nodes"""
+        try:
+            data = json.loads(message)
+            msg_type = data.get('type')
+            
+            if msg_type == 'status_update':
+                # Update node status
+                if 'device_info' in data:
+                    self.nodes[node_id] = DeviceInfo(**data['device_info'])
+                    await self.broadcast_topology()
+            elif msg_type == 'model_update':
+                # Handle model updates
+                if 'models' in data:
+                    if node_id in self.nodes:
+                        self.nodes[node_id].loaded_models = data['models']
+                        await self.broadcast_topology()
+                        
+        except Exception as e:
+            logger.error(f"Error handling message from {node_id}: {e}")
 
     async def broadcast_topology(self):
         """Broadcast current topology to web interface"""
@@ -114,7 +120,8 @@ class MasterNode(Node):
             }
             
             logger.info(f"Broadcasting topology: {len(self.nodes)} nodes")
-            await self.web_server.broadcast_topology(topology)
+            if self.web_server:
+                await self.web_server.broadcast_topology(topology)
             
             # Also broadcast to connected nodes
             message = json.dumps({'type': 'topology', 'data': topology})
@@ -126,6 +133,16 @@ class MasterNode(Node):
             
         except Exception as e:
             logger.error(f"Error broadcasting topology: {e}", exc_info=True)
+
+    async def shutdown(self):
+        """Shutdown the master node"""
+        logger.info("Shutting down master node...")
+        # Close all connections
+        for connection in self.connections.values():
+            await connection.close()
+        # Clear node data
+        self.connections.clear()
+        self.nodes.clear()
 
 def main():
     import argparse

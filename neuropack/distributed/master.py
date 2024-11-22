@@ -1,60 +1,123 @@
 import asyncio
-import logging
 import json
-import websockets
-from pathlib import Path
-import sys
+import logging
 import multiprocessing
-import uvicorn
-from datetime import datetime
-from typing import Dict, List, Optional, Any, Union
-import torch
-import psutil
-import GPUtil
-from rich.layout import Layout
-from rich.live import Live
-from rich.panel import Panel
-from rich.table import Table
-from rich.console import Console
-from rich.tree import Tree
-from rich.text import Text
-from rich.style import Style
-import aiohttp
-from fastapi import FastAPI, WebSocket
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from typing import Dict, Set
+import websockets
+from dataclasses import asdict
+from neuropack.web.server import TopologyServer
+from neuropack.distributed.node import Node, DeviceInfo
 
-from ..distributed.node import Node, DeviceInfo
-from ..web.server import TopologyServer
-
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class MasterNode(Node):
-    def __init__(self, host="0.0.0.0", port=8765):
+    def __init__(self, host="0.0.0.0", port=8765, web_port=8080):
         super().__init__(master_host=host, master_port=port)
         self.host = host
         self.port = port
+        self.web_port = web_port
         self.is_master = True
-        self.web_server = None
+        self.nodes: Dict[str, DeviceInfo] = {}
+        self.connections: Dict[str, websockets.WebSocketServerProtocol] = {}
+        self.web_server = TopologyServer(host=host, port=web_port)
         self.web_process = None
-        self.connected_nodes = {}
-
+        
     async def start(self):
+        """Start the master node and web interface"""
+        logger.info(f"Starting master node on {self.host}:{self.port}")
+        
+        # Start web interface in separate process
+        self.web_process = multiprocessing.Process(
+            target=self.web_server.run
+        )
+        self.web_process.start()
+        
+        # Start WebSocket server
         async with websockets.serve(self.handle_connection, self.host, self.port):
-            self.web_server = TopologyServer()
-            
-            # Start web server in a separate process
-            self.web_process = multiprocessing.Process(
-                target=self.web_server.run
-            )
-            self.web_process.start()
-            
-            logging.info(f"Master node running on port {self.port}")
-            logging.info(f"Web interface available at http://localhost:8080")
-            
-            # Keep the server running
             await asyncio.Future()  # run forever
+            
+    async def handle_connection(self, websocket: websockets.WebSocketServerProtocol):
+        """Handle incoming WebSocket connections"""
+        try:
+            # Wait for initial registration message
+            message = await websocket.recv()
+            data = json.loads(message)
+            
+            if data.get('type') == 'register':
+                node_id = data['id']
+                device_info = DeviceInfo(**data['device_info'])
+                
+                # Store connection and device info
+                self.connections[node_id] = websocket
+                self.nodes[node_id] = device_info
+                
+                logger.info(f"Node {node_id} connected")
+                await self.broadcast_topology()
+                
+                # Handle messages from this node
+                try:
+                    async for message in websocket:
+                        await self.handle_message(node_id, message)
+                except websockets.ConnectionClosed:
+                    logger.info(f"Node {node_id} disconnected")
+                finally:
+                    # Cleanup on disconnect
+                    if node_id in self.connections:
+                        del self.connections[node_id]
+                    if node_id in self.nodes:
+                        del self.nodes[node_id]
+                    await self.broadcast_topology()
+                    
+        except Exception as e:
+            logger.error(f"Error handling connection: {e}")
+            
+    async def handle_message(self, node_id: str, message: str):
+        """Handle incoming messages from nodes"""
+        try:
+            data = json.loads(message)
+            msg_type = data.get('type')
+            
+            if msg_type == 'status_update':
+                # Update node status
+                if 'device_info' in data:
+                    self.nodes[node_id] = DeviceInfo(**data['device_info'])
+                    await self.broadcast_topology()
+                    
+            # Add other message handlers as needed
+            
+        except Exception as e:
+            logger.error(f"Error handling message from {node_id}: {e}")
+            
+    async def broadcast_topology(self):
+        """Broadcast current topology to web interface"""
+        topology = {
+            'nodes': [
+                {
+                    'id': node_id,
+                    'info': asdict(info),
+                    'role': 'master' if node_id == self.id else 'worker'
+                }
+                for node_id, info in self.nodes.items()
+            ],
+            'links': [
+                {
+                    'source': self.id,
+                    'target': node_id
+                }
+                for node_id in self.nodes.keys() if node_id != self.id
+            ]
+        }
+        
+        # Send to web interface
+        await self.web_server.broadcast_topology(topology)
+        
+        # Broadcast to all nodes
+        message = json.dumps({'type': 'topology', 'data': topology})
+        for connection in self.connections.values():
+            try:
+                await connection.send(message)
+            except:
+                continue
 
 def main():
     import argparse

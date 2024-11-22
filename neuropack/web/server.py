@@ -16,7 +16,7 @@ class TopologyServer:
         self.host = host
         self.port = port
         self.app = FastAPI()
-        self.connections = set()  # Store active WebSocket connections
+        self.connections = set()
         self.setup_routes()
         
     def setup_routes(self):
@@ -25,9 +25,6 @@ class TopologyServer:
         
         @self.app.get("/")
         async def get_index():
-            index_path = Path(__file__).parent / "static" / "index.html"
-            if index_path.exists():
-                return FileResponse(str(index_path))
             return HTMLResponse(self._get_default_html())
             
         @self.app.websocket("/ws")
@@ -36,33 +33,35 @@ class TopologyServer:
             self.connections.add(websocket)
             try:
                 while True:
-                    await websocket.receive_text()
+                    await websocket.receive_text()  # Keep connection alive
             except:
                 self.connections.remove(websocket)
                 
-    async def broadcast_topology(self, topology_data=None):
-        if topology_data is None:
-            topology_data = {"nodes": [], "links": []}
-        
+    async def broadcast_topology(self, topology_data):
+        """Broadcast topology updates to all connected clients"""
+        dead_connections = set()
         for connection in self.connections:
             try:
                 await connection.send_json(topology_data)
             except:
-                self.connections.remove(connection)
-                
+                dead_connections.add(connection)
+        
+        # Cleanup dead connections
+        self.connections -= dead_connections
+
     def _get_default_html(self):
-        """Return default HTML if index.html doesn't exist"""
+        """Return enhanced HTML template"""
         return """
         <!DOCTYPE html>
         <html>
         <head>
-            <title>NeuroPack Topology</title>
-            <script src="/static/js/d3.min.js"></script>
+            <title>NeuroPack Cluster Topology</title>
+            <script src="https://d3js.org/d3.v7.min.js"></script>
             <style>
                 body {
                     margin: 0;
                     padding: 0;
-                    font-family: Arial, sans-serif;
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
                     background: #1a1a1a;
                     color: #ffffff;
                 }
@@ -71,17 +70,29 @@ class TopologyServer:
                     height: 100vh;
                 }
                 .node {
+                    cursor: pointer;
+                }
+                .node circle {
                     fill: #4CAF50;
                     stroke: #fff;
                     stroke-width: 2px;
+                    transition: all 0.3s ease;
+                }
+                .node.master circle {
+                    fill: #ff4444;
+                }
+                .node:hover circle {
+                    filter: brightness(1.2);
                 }
                 .link {
-                    stroke: #999;
+                    stroke: #666;
+                    stroke-width: 2px;
                     stroke-opacity: 0.6;
                 }
                 .node text {
                     fill: white;
                     font-size: 12px;
+                    text-anchor: middle;
                 }
                 .tooltip {
                     position: absolute;
@@ -90,13 +101,36 @@ class TopologyServer:
                     color: white;
                     border-radius: 5px;
                     pointer-events: none;
-                    display: none;
+                    font-size: 14px;
+                    z-index: 1000;
+                }
+                #stats {
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    background: rgba(0, 0, 0, 0.8);
+                    padding: 15px;
+                    border-radius: 5px;
+                    min-width: 200px;
+                }
+                .stats-title {
+                    font-size: 16px;
+                    font-weight: bold;
+                    margin-bottom: 10px;
+                }
+                .stats-item {
+                    margin: 5px 0;
+                    font-size: 14px;
                 }
             </style>
         </head>
         <body>
             <div id="topology"></div>
-            <div class="tooltip"></div>
+            <div id="stats">
+                <div class="stats-title">Cluster Statistics</div>
+                <div id="stats-content"></div>
+            </div>
+            <div class="tooltip" style="display: none;"></div>
             <script src="/static/js/topology.js"></script>
         </body>
         </html>

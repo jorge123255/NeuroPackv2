@@ -51,7 +51,7 @@ class MasterNode(Node):
         """Monitor cluster health and performance"""
         while True:
             try:
-                for node_id, info in self.nodes.items():
+                for node_id in list(self.nodes.keys()):
                     # Update node metrics
                     metrics = await self._get_node_metrics(node_id)
                     self.performance_metrics[node_id] = metrics
@@ -70,18 +70,16 @@ class MasterNode(Node):
         """Collect detailed system metrics"""
         while True:
             try:
+                metrics = await self._get_node_metrics()
                 cluster_metrics = {
-                    'total_gpus': sum(node.gpu_count for node in self.nodes.values()),
-                    'total_memory': sum(node.total_memory for node in self.nodes.values()),
-                    'available_memory': sum(node.available_memory for node in self.nodes.values()),
-                    'loaded_models': self._get_loaded_models(),
-                    'active_tasks': len(self.task_queue._queue),
-                    'node_status': {
-                        node_id: {
-                            'status': 'active' if node_id in self.connections else 'disconnected',
-                            'last_seen': self.performance_metrics.get(node_id, {}).get('last_seen', 0)
-                        }
-                        for node_id in self.nodes
+                    'nodes': metrics['nodes'],
+                    'links': metrics['links'],
+                    'cluster_stats': {
+                        'total_nodes': len(self.nodes),
+                        'active_nodes': len(self.connections),
+                        'total_gpus': sum(node.gpu_count for node in self.nodes.values()),
+                        'total_memory': sum(node.total_memory for node in self.nodes.values()),
+                        'loaded_models': self._get_loaded_models()
                     }
                 }
                 
@@ -211,8 +209,18 @@ class MasterNode(Node):
         self.connections.clear()
         self.nodes.clear()
 
-    async def _get_node_metrics(self):
-        """Get metrics from all connected nodes"""
+    async def _get_node_metrics(self, node_id=None):
+        """Get metrics from all connected nodes or a specific node"""
+        if node_id:
+            # Get metrics for specific node
+            return {
+                'cpu_usage': 0,  # Add actual CPU metrics collection
+                'memory_usage': 0,  # Add actual memory metrics collection
+                'last_seen': 0,  # Add timestamp
+                'network_traffic': 0  # Add network metrics
+            }
+        
+        # Get metrics for all nodes
         metrics = {
             'nodes': [],
             'links': []
@@ -222,7 +230,7 @@ class MasterNode(Node):
             node_data = {
                 'id': node_id,
                 'role': 'master' if node_id == self.id else 'worker',
-                'info': node_info.device_info
+                'info': asdict(node_info)
             }
             metrics['nodes'].append(node_data)
             

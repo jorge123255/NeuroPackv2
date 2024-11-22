@@ -79,9 +79,15 @@ class TopologyServer:
         logger.info(f"Broadcasting metrics to {len(self.connections)} clients")
         logger.debug(f"Metrics data: {metrics_data}")
         
+        # Ensure metrics_data has the correct structure
+        if not isinstance(metrics_data, dict) or 'nodes' not in metrics_data:
+            logger.error("Invalid metrics data format")
+            return
+        
         topology_data = {
             'nodes': metrics_data['nodes'],
-            'links': metrics_data['links']
+            'links': metrics_data['links'],
+            'cluster_stats': metrics_data.get('cluster_stats', {})
         }
         
         await self.broadcast_topology(topology_data)

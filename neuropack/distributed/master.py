@@ -46,7 +46,7 @@ class MasterNode(Node):
             
             if data.get('type') == 'register':
                 node_id = data['id']
-                device_info = data['device_info']
+                device_info = DeviceInfo(**data['device_info'])
                 
                 # Store connection and device info
                 self.connections[node_id] = websocket
@@ -66,7 +66,7 @@ class MasterNode(Node):
         except websockets.ConnectionClosed:
             logger.info(f"Node {node_id} disconnected")
         except Exception as e:
-            logger.error(f"Error handling connection: {e}")
+            logger.error(f"Error handling connection: {e}", exc_info=True)
         finally:
             # Cleanup on disconnect
             if node_id:
@@ -84,7 +84,8 @@ class MasterNode(Node):
             if msg_type == 'status_update':
                 # Update node status
                 if 'device_info' in data:
-                    self.nodes[node_id] = data['device_info']
+                    device_info = DeviceInfo(**data['device_info'])
+                    self.nodes[node_id] = device_info
                     await self.broadcast_topology()
                     
         except Exception as e:
@@ -92,34 +93,37 @@ class MasterNode(Node):
             
     async def broadcast_topology(self):
         """Broadcast current topology to web interface"""
-        topology = {
-            'nodes': [
-                {
-                    'id': node_id,
-                    'info': asdict(info),
-                    'role': 'master' if node_id == self.id else 'worker'
-                }
-                for node_id, info in self.nodes.items()
-            ],
-            'links': [
-                {
-                    'source': self.id,
-                    'target': node_id
-                }
-                for node_id in self.nodes.keys() if node_id != self.id
-            ]
-        }
-        
-        # Send to web interface
-        await self.web_server.broadcast_topology(topology)
-        
-        # Broadcast to all nodes
-        message = json.dumps({'type': 'topology', 'data': topology})
-        for connection in self.connections.values():
-            try:
-                await connection.send(message)
-            except:
-                continue
+        try:
+            topology = {
+                'nodes': [
+                    {
+                        'id': node_id,
+                        'info': asdict(info),
+                        'role': 'master' if node_id == self.id else 'worker'
+                    }
+                    for node_id, info in self.nodes.items()
+                ],
+                'links': [
+                    {
+                        'source': self.id,
+                        'target': node_id
+                    }
+                    for node_id in self.nodes.keys() if node_id != self.id
+                ]
+            }
+            
+            # Send to web interface
+            await self.web_server.broadcast_topology(topology)
+            
+            # Broadcast to all nodes
+            message = json.dumps({'type': 'topology', 'data': topology})
+            for connection in self.connections.values():
+                try:
+                    await connection.send(message)
+                except:
+                    continue
+        except Exception as e:
+            logger.error(f"Error broadcasting topology: {e}", exc_info=True)
 
 def main():
     import argparse

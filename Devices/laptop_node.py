@@ -11,6 +11,7 @@ import sys
 from functools import wraps
 import aioconsole
 import websockets
+import socket
 
 # Add NeuroPack root to Python path
 repo_root = Path(__file__).parent.parent
@@ -129,19 +130,28 @@ class LaptopNode(Node):
                     self.connected = True
                     logger.info(f"Connected to master at {self.master_address}")
                     
-                    # Send initial registration
+                    # Format device info to match DeviceInfo structure
+                    system_info = self.laptop_info.to_dict()['system_info']
                     registration = {
                         'type': 'register',
                         'id': self.node_name,
-                        'device_info': self.laptop_info.to_dict()['system_info']
+                        'device_info': {
+                            'cpu_count': system_info['cpu_cores'],
+                            'cpu_freq': system_info['cpu_freq']['current'] if system_info['cpu_freq'] else 0.0,
+                            'total_memory': psutil.virtual_memory().total,
+                            'available_memory': psutil.virtual_memory().available,
+                            'gpu_count': len(system_info['gpu_info']),
+                            'gpu_info': system_info['gpu_info'],
+                            'hostname': socket.gethostname(),
+                            'ip_address': socket.gethostbyname(socket.gethostname()),
+                            'platform': system_info['platform']
+                        }
                     }
                     await websocket.send(json.dumps(registration))
                     
-                    # Start status update loop in background
                     update_task = asyncio.create_task(self._status_update_loop(websocket))
                     
                     try:
-                        # Keep connection alive and handle incoming messages
                         async for message in websocket:
                             try:
                                 data = json.loads(message)
@@ -165,13 +175,24 @@ class LaptopNode(Node):
             try:
                 if self.connected:
                     self.laptop_info.update()
+                    system_info = self.laptop_info.to_dict()['system_info']
                     status = {
                         'type': 'status_update',
                         'id': self.node_name,
-                        'device_info': self.laptop_info.to_dict()
+                        'device_info': {
+                            'cpu_count': system_info['cpu_cores'],
+                            'cpu_freq': system_info['cpu_freq']['current'] if system_info['cpu_freq'] else 0.0,
+                            'total_memory': psutil.virtual_memory().total,
+                            'available_memory': psutil.virtual_memory().available,
+                            'gpu_count': len(system_info['gpu_info']),
+                            'gpu_info': system_info['gpu_info'],
+                            'hostname': socket.gethostname(),
+                            'ip_address': socket.gethostbyname(socket.gethostname()),
+                            'platform': system_info['platform']
+                        }
                     }
                     await websocket.send(json.dumps(status))
-                await asyncio.sleep(5)  # Update every 5 seconds
+                await asyncio.sleep(5)
             except Exception as e:
                 logger.error(f"Error sending status update: {e}")
                 await asyncio.sleep(5)

@@ -38,6 +38,7 @@ class MasterNode(Node):
             
     async def handle_connection(self, websocket: websockets.WebSocketServerProtocol):
         """Handle incoming WebSocket connections"""
+        node_id = None
         try:
             # Wait for initial registration message
             message = await websocket.recv()
@@ -45,7 +46,7 @@ class MasterNode(Node):
             
             if data.get('type') == 'register':
                 node_id = data['id']
-                device_info = DeviceInfo(**data['device_info'])
+                device_info = data['device_info']
                 
                 # Store connection and device info
                 self.connections[node_id] = websocket
@@ -55,36 +56,37 @@ class MasterNode(Node):
                 await self.broadcast_topology()
                 
                 # Handle messages from this node
-                try:
-                    async for message in websocket:
-                        await self.handle_message(node_id, message)
-                except websockets.ConnectionClosed:
-                    logger.info(f"Node {node_id} disconnected")
-                finally:
-                    # Cleanup on disconnect
-                    if node_id in self.connections:
-                        del self.connections[node_id]
-                    if node_id in self.nodes:
-                        del self.nodes[node_id]
-                    await self.broadcast_topology()
-                    
+                async for message in websocket:
+                    try:
+                        data = json.loads(message)
+                        await self.handle_message(node_id, data)
+                    except json.JSONDecodeError:
+                        logger.error(f"Invalid message from node {node_id}")
+                        
+        except websockets.ConnectionClosed:
+            logger.info(f"Node {node_id} disconnected")
         except Exception as e:
             logger.error(f"Error handling connection: {e}")
+        finally:
+            # Cleanup on disconnect
+            if node_id:
+                if node_id in self.connections:
+                    del self.connections[node_id]
+                if node_id in self.nodes:
+                    del self.nodes[node_id]
+                await self.broadcast_topology()
             
-    async def handle_message(self, node_id: str, message: str):
+    async def handle_message(self, node_id: str, data: dict):
         """Handle incoming messages from nodes"""
         try:
-            data = json.loads(message)
             msg_type = data.get('type')
             
             if msg_type == 'status_update':
                 # Update node status
                 if 'device_info' in data:
-                    self.nodes[node_id] = DeviceInfo(**data['device_info'])
+                    self.nodes[node_id] = data['device_info']
                     await self.broadcast_topology()
                     
-            # Add other message handlers as needed
-            
         except Exception as e:
             logger.error(f"Error handling message from {node_id}: {e}")
             

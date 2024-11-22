@@ -129,43 +129,59 @@ class LaptopNode(Node):
                     self.connected = True
                     logger.info(f"Connected to master at {self.master_address}")
                     
-                    # Start status update loop
+                    # Send initial registration
+                    registration = {
+                        'type': 'register',
+                        'id': self.node_name,
+                        'device_info': self.laptop_info.to_dict()['system_info']
+                    }
+                    await websocket.send(json.dumps(registration))
+                    
+                    # Start status update loop in background
                     update_task = asyncio.create_task(self._status_update_loop(websocket))
                     
                     try:
-                        await asyncio.gather(
-                            self._register(websocket),
-                            self._handle_messages(websocket)
-                        )
+                        # Keep connection alive and handle incoming messages
+                        async for message in websocket:
+                            try:
+                                data = json.loads(message)
+                                await self._handle_message(data)
+                            except json.JSONDecodeError:
+                                logger.error("Invalid message format")
+                    except websockets.ConnectionClosed:
+                        logger.info("Connection closed by server")
                     finally:
                         update_task.cancel()
+                        self.connected = False
                         
-            except websockets.ConnectionClosed:
+            except (websockets.ConnectionClosed, ConnectionRefusedError) as e:
                 self.connected = False
-                logger.warning("Connection closed. Attempting to reconnect...")
+                logger.warning(f"Connection failed: {e}. Retrying in {self.reconnect_delay}s...")
                 await asyncio.sleep(self.reconnect_delay)
-            except Exception as e:
-                self.connected = False
-                logger.error(f"Connection error: {e}")
-                await asyncio.sleep(self.reconnect_delay)
-    
+                
     async def _status_update_loop(self, websocket):
-        """Periodically send status updates to master"""
+        """Periodically send status updates"""
         while True:
             try:
-                status_update = {
-                    'type': 'status_update',
-                    'data': {
-                        'node_type': self.node_type,
-                        'node_name': self.node_name,
-                        'node_info': self.laptop_info.to_dict()
+                if self.connected:
+                    self.laptop_info.update()
+                    status = {
+                        'type': 'status_update',
+                        'id': self.node_name,
+                        'device_info': self.laptop_info.to_dict()
                     }
-                }
-                await websocket.send(json.dumps(status_update))
+                    await websocket.send(json.dumps(status))
                 await asyncio.sleep(5)  # Update every 5 seconds
             except Exception as e:
                 logger.error(f"Error sending status update: {e}")
                 await asyncio.sleep(5)
+                
+    async def _handle_message(self, data):
+        """Handle incoming messages from master"""
+        msg_type = data.get('type')
+        if msg_type == 'topology':
+            # Handle topology updates if needed
+            pass
 
 async def handle_commands(node: LaptopNode):
     """Async command handler"""

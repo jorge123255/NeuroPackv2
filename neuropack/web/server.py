@@ -21,6 +21,7 @@ class TopologyServer:
         self.app = FastAPI()
         self.connections = set()
         self.setup_routes()
+        self.latest_topology = None  # Store latest topology
         
     def setup_routes(self):
         static_dir = Path(__file__).parent / "static"
@@ -35,8 +36,17 @@ class TopologyServer:
             await websocket.accept()
             logger.info("New WebSocket client connected")
             self.connections.add(websocket)
+            
+            # Send latest topology if available
+            if self.latest_topology:
+                try:
+                    await websocket.send_json(self.latest_topology)
+                except Exception as e:
+                    logger.error(f"Error sending initial topology: {e}")
+            
             try:
                 while True:
+                    # Keep connection alive
                     await websocket.receive_text()
             except Exception as e:
                 logger.error(f"WebSocket error: {e}")
@@ -49,10 +59,14 @@ class TopologyServer:
         logger.info(f"Broadcasting topology to {len(self.connections)} clients")
         logger.debug(f"Topology data: {topology_data}")
         
+        # Store latest topology
+        self.latest_topology = topology_data
+        
         dead_connections = set()
         for connection in self.connections:
             try:
                 await connection.send_json(topology_data)
+                logger.debug(f"Sent topology to client")
             except Exception as e:
                 logger.error(f"Failed to send to client: {e}")
                 dead_connections.add(connection)

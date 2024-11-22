@@ -23,22 +23,22 @@ const simulation = d3.forceSimulation()
     .force('center', d3.forceCenter(width / 2, height / 2))
     .force('collision', d3.forceCollide().radius(80));
 
-// WebSocket connection
-const ws = new WebSocket(`ws://${window.location.host}/ws`);
+// Update the WebSocket connection to use the correct port
+const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+const wsUrl = `${wsProtocol}//${window.location.hostname}:${window.location.port}/ws`;
+console.log('Connecting to WebSocket:', wsUrl);
+
+const ws = new WebSocket(wsUrl);
 
 ws.onopen = () => {
-    console.log('Connected to server');
-    // Add visual indicator
-    d3.select('#stats')
-        .append('div')
-        .attr('class', 'connection-status')
+    console.log('WebSocket connected');
+    d3.select('.connection-status')
         .style('color', '#4CAF50')
         .text('● Connected to server');
 };
 
 ws.onclose = () => {
-    console.log('Disconnected from server');
-    // Update visual indicator
+    console.error('WebSocket disconnected');
     d3.select('.connection-status')
         .style('color', '#ff4444')
         .text('● Disconnected from server');
@@ -49,10 +49,15 @@ ws.onerror = (error) => {
 };
 
 ws.onmessage = function(event) {
-    console.log('Received data:', event.data);  // Debug log
+    console.log('Received topology data:', event.data);
     try {
         const data = JSON.parse(event.data);
-        updateVisualization(data);
+        console.log('Parsed topology data:', data);
+        if (data.nodes && data.links) {
+            updateVisualization(data);
+        } else {
+            console.error('Invalid topology data format:', data);
+        }
     } catch (e) {
         console.error('Error processing message:', e);
     }

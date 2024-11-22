@@ -31,11 +31,22 @@ class MasterNode(Node):
         # Create web server in the same event loop
         self.web_server = TopologyServer(host=self.host, port=self.web_port)
         
+        # Debug: Print initial state
+        logger.info(f"Initial nodes: {list(self.nodes.keys())}")
+        
         # Start both servers concurrently
-        await asyncio.gather(
-            self.web_server.start(),
-            websockets.serve(self.handle_connection, self.host, self.port)
-        )
+        try:
+            await asyncio.gather(
+                self.web_server.start(),
+                websockets.serve(self.handle_connection, self.host, self.port)
+            )
+            logger.info("Both servers started successfully")
+            
+            # Debug: Send initial topology
+            await self.broadcast_topology()
+            
+        except Exception as e:
+            logger.error(f"Error starting servers: {e}", exc_info=True)
         
     async def handle_connection(self, websocket: websockets.WebSocketServerProtocol):
         """Handle incoming WebSocket connections"""
@@ -120,16 +131,13 @@ class MasterNode(Node):
             }
             
             logger.info(f"Broadcasting topology: {len(self.nodes)} nodes")
+            logger.debug(f"Topology data: {topology}")
+            
             if self.web_server:
                 await self.web_server.broadcast_topology(topology)
-            
-            # Also broadcast to connected nodes
-            message = json.dumps({'type': 'topology', 'data': topology})
-            for connection in self.connections.values():
-                try:
-                    await connection.send(message)
-                except Exception as e:
-                    logger.error(f"Failed to send topology to node: {e}")
+                logger.info("Topology broadcast completed")
+            else:
+                logger.error("Web server not initialized")
             
         except Exception as e:
             logger.error(f"Error broadcasting topology: {e}", exc_info=True)

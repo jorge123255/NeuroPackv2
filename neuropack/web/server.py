@@ -39,11 +39,15 @@ class TopologyServer:
                 
     async def broadcast_topology(self, topology_data):
         """Broadcast topology updates to all connected clients"""
+        logger.info(f"Broadcasting topology to {len(self.connections)} clients")
+        logger.debug(f"Topology data: {topology_data}")
+        
         dead_connections = set()
         for connection in self.connections:
             try:
                 await connection.send_json(topology_data)
-            except:
+            except Exception as e:
+                logger.error(f"Failed to send to client: {e}")
                 dead_connections.add(connection)
         
         # Cleanup dead connections

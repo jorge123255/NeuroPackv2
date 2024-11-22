@@ -26,6 +26,38 @@ const simulation = d3.forceSimulation()
 // WebSocket connection
 const ws = new WebSocket(`ws://${window.location.host}/ws`);
 
+ws.onopen = () => {
+    console.log('Connected to server');
+    // Add visual indicator
+    d3.select('#stats')
+        .append('div')
+        .attr('class', 'connection-status')
+        .style('color', '#4CAF50')
+        .text('● Connected to server');
+};
+
+ws.onclose = () => {
+    console.log('Disconnected from server');
+    // Update visual indicator
+    d3.select('.connection-status')
+        .style('color', '#ff4444')
+        .text('● Disconnected from server');
+};
+
+ws.onerror = (error) => {
+    console.error('WebSocket error:', error);
+};
+
+ws.onmessage = function(event) {
+    console.log('Received data:', event.data);  // Debug log
+    try {
+        const data = JSON.parse(event.data);
+        updateVisualization(data);
+    } catch (e) {
+        console.error('Error processing message:', e);
+    }
+};
+
 let nodes = [];
 let links = [];
 
@@ -93,6 +125,13 @@ function hideTooltip() {
 }
 
 function updateVisualization(data) {
+    if (!data || !data.nodes || !data.links) {
+        console.warn('Invalid topology data received');
+        return;
+    }
+    
+    console.log('Updating visualization with:', data);  // Debug log
+    
     // Update nodes and links
     nodes = data.nodes;
     links = data.links;
@@ -172,11 +211,6 @@ function updateVisualization(data) {
     simulation.force('link').links(links);
     simulation.alpha(1).restart();
 }
-
-ws.onmessage = function(event) {
-    const data = JSON.parse(event.data);
-    updateVisualization(data);
-};
 
 // Drag functions
 function dragstarted(event, d) {

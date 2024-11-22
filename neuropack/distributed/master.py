@@ -26,11 +26,17 @@ class MasterNode(Node):
         """Start the master node and web interface"""
         logger.info(f"Starting master node on {self.host}:{self.port}")
         
+        # Add self to nodes
+        self.nodes[self.id] = self.device_info
+        
         # Start web interface in separate process
         self.web_process = multiprocessing.Process(
             target=self.web_server.run
         )
         self.web_process.start()
+        
+        # Initial topology broadcast
+        await self.broadcast_topology()
         
         # Start WebSocket server
         async with websockets.serve(self.handle_connection, self.host, self.port):
@@ -112,16 +118,9 @@ class MasterNode(Node):
                 ]
             }
             
-            # Send to web interface
+            logger.info(f"Broadcasting topology: {len(self.nodes)} nodes")
             await self.web_server.broadcast_topology(topology)
             
-            # Broadcast to all nodes
-            message = json.dumps({'type': 'topology', 'data': topology})
-            for connection in self.connections.values():
-                try:
-                    await connection.send(message)
-                except:
-                    continue
         except Exception as e:
             logger.error(f"Error broadcasting topology: {e}", exc_info=True)
 

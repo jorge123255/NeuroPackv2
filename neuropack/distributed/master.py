@@ -243,6 +243,61 @@ class MasterNode(Node):
         
         return metrics
 
+    async def _handle_status_update(self, node_id: str, data: dict):
+        """Handle status update from node"""
+        try:
+            # Update node info
+            if 'device_info' in data:
+                self.nodes[node_id] = DeviceInfo(**data['device_info'])
+            
+            # Update performance metrics
+            if 'metrics' in data:
+                self.performance_metrics[node_id] = data['metrics']
+            
+            # Broadcast updated topology
+            await self.broadcast_topology()
+            
+        except Exception as e:
+            logger.error(f"Error handling status update from {node_id}: {e}")
+
+    async def _handle_model_update(self, node_id: str, data: dict):
+        """Handle model update from node"""
+        try:
+            if 'models' in data:
+                self.model_registry[node_id] = data['models']
+                await self.broadcast_topology()
+        except Exception as e:
+            logger.error(f"Error handling model update from {node_id}: {e}")
+
+    async def _handle_task_complete(self, node_id: str, data: dict):
+        """Handle task completion notification"""
+        try:
+            task_id = data.get('task_id')
+            result = data.get('result')
+            # Process completed task
+            logger.info(f"Task {task_id} completed on node {node_id}")
+        except Exception as e:
+            logger.error(f"Error handling task completion from {node_id}: {e}")
+
+    async def _handle_resource_request(self, node_id: str, data: dict):
+        """Handle resource request from node"""
+        try:
+            resource_type = data.get('resource_type')
+            amount = data.get('amount')
+            # Process resource request
+            logger.info(f"Resource request from {node_id}: {resource_type} = {amount}")
+        except Exception as e:
+            logger.error(f"Error handling resource request from {node_id}: {e}")
+
+    async def _handle_error(self, node_id: str, data: dict):
+        """Handle error report from node"""
+        try:
+            error_type = data.get('error_type')
+            error_msg = data.get('error_msg')
+            logger.error(f"Error reported from {node_id}: {error_type} - {error_msg}")
+        except Exception as e:
+            logger.error(f"Error handling error report from {node_id}: {e}")
+
 def main():
     import argparse
     parser = argparse.ArgumentParser()

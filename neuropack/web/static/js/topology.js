@@ -339,240 +339,8 @@ function createNodeBox(node) {
     const boxWidth = 280;
     const boxHeight = info.gpu_count > 0 ? 180 : 120;
     
-    // Main box
-    nodeGroup.append('rect')
-        .attr('class', 'node-box')
-        .attr('width', boxWidth)
-        .attr('height', boxHeight)
-        .attr('x', -boxWidth/2)
-        .attr('y', -boxHeight/2)
-        .attr('rx', 3)
-        .attr('ry', 3);
-
-    // Title bar
-    nodeGroup.append('rect')
-        .attr('class', 'node-title')
-        .attr('width', boxWidth)
-        .attr('height', 25)
-        .attr('x', -boxWidth/2)
-        .attr('y', -boxHeight/2)
-        .attr('fill', node.role === 'master' ? '#ff4444' : '#33ff33')
-        .attr('opacity', 0.3);
-
-    // Node name
-    nodeGroup.append('text')
-        .attr('class', 'node-name')
-        .attr('x', -boxWidth/2 + 10)
-        .attr('y', -boxHeight/2 + 16)
-        .text(`${node.info.hostname} (${node.role})`);
-
-    // System info
-    const systemInfo = nodeGroup.append('g')
-        .attr('class', 'system-info')
-        .attr('transform', `translate(${-boxWidth/2 + 10}, ${-boxHeight/2 + 40})`);
-
-    systemInfo.append('text')
-        .attr('y', 15)
-        .text(`CPU: ${info.cpu_count} cores @ ${(info.cpu_freq/1000).toFixed(2)} GHz`);
-
-    // Memory bar
-    const memUsage = (info.total_memory - info.available_memory) / info.total_memory * 100;
-    const memBar = systemInfo.append('g')
-        .attr('transform', 'translate(0, 25)');
-
-    memBar.append('text')
-        .attr('y', 15)
-        .text(`RAM: ${formatBytes(info.available_memory)} / ${formatBytes(info.total_memory)}`);
-
-    memBar.append('rect')
-        .attr('class', 'meter-bg')
-        .attr('width', boxWidth - 20)
-        .attr('height', 8)
-        .attr('y', 20);
-
-    memBar.append('rect')
-        .attr('class', 'meter-fill')
-        .attr('width', (boxWidth - 20) * (memUsage/100))
-        .attr('height', 8)
-        .attr('y', 20)
-        .attr('fill', memUsage > 90 ? '#ff4444' : memUsage > 70 ? '#ffaa00' : '#33ff33');
-
-    // GPU section
-    if (info.gpu_count > 0) {
-        const gpuSection = systemInfo.append('g')
-            .attr('transform', 'translate(0, 70)');
-
-        info.gpu_info.forEach((gpu, i) => {
-            const gpuGroup = gpuSection.append('g')
-                .attr('transform', `translate(0, ${i * 35})`);
-
-            gpuGroup.append('text')
-                .text(`GPU ${i+1}: ${gpu.name}`);
-
-            const memUsage = gpu.current_memory / gpu.total_memory * 100;
-            
-            gpuGroup.append('rect')
-                .attr('class', 'meter-bg')
-                .attr('width', boxWidth - 20)
-                .attr('height', 8)
-                .attr('y', 15);
-
-            gpuGroup.append('rect')
-                .attr('class', 'meter-fill')
-                .attr('width', (boxWidth - 20) * (memUsage/100))
-                .attr('height', 8)
-                .attr('y', 15)
-                .attr('fill', '#2196F3');
-
-            gpuGroup.append('text')
-                .attr('x', 0)
-                .attr('y', 35)
-                .attr('class', 'gpu-memory')
-                .style('font-size', '12px')
-                .text(`Memory: ${formatBytes(gpu.current_memory)} / ${formatBytes(gpu.total_memory)}`);
-        });
-    }
-
-    // Add connection status indicator
-    nodeGroup.append('circle')
-        .attr('class', 'status-indicator')
-        .attr('r', 5)
-        .attr('cx', boxWidth/2 - 15)
-        .attr('cy', -boxHeight/2 + 12)
-        .attr('fill', '#4CAF50');
-
-    // Add ASCII decorations
-    nodeGroup.append('text')
-        .attr('class', 'ascii-decoration')
-        .attr('x', -boxWidth/2)
-        .attr('y', -boxHeight/2 - 10)
-        .text(`+${'-'.repeat(Math.floor(boxWidth/8))}+`);
-
-    // Add model information
-    if (node.info.loaded_models) {
-        const modelSection = systemInfo.append('g')
-            .attr('transform', `translate(0, ${info.gpu_count > 0 ? 180 : 120})`);
-
-        modelSection.append('text')
-            .text('Loaded Models:');
-
-        Object.entries(node.info.loaded_models).forEach(([name, model], i) => {
-            modelSection.append('text')
-                .attr('y', (i + 1) * 20)
-                .text(`${name} (${model.type})`);
-        });
-    }
-
-    // Add real-time metrics
-    const metricsSection = nodeGroup.append('g')
-        .attr('class', 'metrics')
-        .attr('transform', `translate(${boxWidth/2 - 60}, -${boxHeight/2 + 15})`);
-
-    // CPU usage indicator
-    const cpuMeter = metricsSection.append('g');
-    cpuMeter.append('rect')
-        .attr('class', 'meter-bg')
-        .attr('width', 50)
-        .attr('height', 8);
-
-    cpuMeter.append('rect')
-        .attr('class', 'meter-fill cpu-meter')
-        .attr('width', 0)
-        .attr('height', 8);
-
-    // Add ASCII decorations
-    const decorations = [
-        { x: -boxWidth/2, y: -boxHeight/2, char: '+' },
-        { x: boxWidth/2, y: -boxHeight/2, char: '+' },
-        { x: -boxWidth/2, y: boxHeight/2, char: '+' },
-        { x: boxWidth/2, y: boxHeight/2, char: '+' }
-    ];
-
-    decorations.forEach(d => {
-        nodeGroup.append('text')
-            .attr('class', 'ascii-decoration')
-            .attr('x', d.x)
-            .attr('y', d.y)
-            .text(d.char);
-    });
-}
-
-// Add real-time updates
-function startRealtimeUpdates() {
-    setInterval(() => {
-        d3.selectAll('.cpu-meter')
-            .transition()
-            .duration(1000)
-            .attr('width', () => Math.random() * 50);
-    }, 2000);
-}
-
-// Update node positioning function
-function initializeNodePositions(nodes) {
-    const masterNode = nodes.find(n => n.role === 'master');
-    const workerNodes = nodes.filter(n => n.role !== 'master');
-    
-    if (masterNode) {
-        // Fix master node in center
-        masterNode.fx = width / 2;
-        masterNode.fy = height / 2;
-        
-        // Position worker nodes in a hexagonal pattern around master
-        const radius = 350; // Distance from center
-        const angleStep = (2 * Math.PI) / Math.max(6, workerNodes.length);
-        
-        workerNodes.forEach((node, i) => {
-            const angle = i * angleStep;
-            // Fix worker nodes in position
-            node.fx = width / 2 + radius * Math.cos(angle);
-            node.fy = height / 2 + radius * Math.sin(angle);
-        });
-    }
-}
-
-// Create a more terminal-style layout
-function createTerminalLayout(data) {
-    // Clear previous content
-    g.selectAll('*').remove();
-
-    const masterNode = data.nodes.find(n => n.role === 'master');
-    const workerNodes = data.nodes.filter(n => n.role !== 'master');
-
-    // Create ASCII art header
-    const header = g.append('g')
-        .attr('class', 'cluster-header')
-        .attr('transform', `translate(${width/2}, 60)`);
-
-    header.append('text')
-        .attr('text-anchor', 'middle')
-        .attr('class', 'cluster-title')
-        .text(`Exo Cluster (${data.nodes.length} nodes)`);
-
-    // Create master node box
-    if (masterNode) {
-        const masterBox = createNodeBox(masterNode, width/2, 150);
-        
-        // Create connection lines to worker nodes
-        workerNodes.forEach((worker, i) => {
-            const y = 300 + i * 180;
-            const workerBox = createNodeBox(worker, width/2, y);
-            
-            // Create ASCII connection line
-            createConnectionLine(width/2, 200, width/2, y - 50);
-        });
-    }
-
-    // Add cluster stats
-    createClusterStats(data, 20, 20);
-}
-
-function createNodeBox(node, x, y) {
-    const boxGroup = g.append('g')
-        .attr('class', `node ${node.role}`)
-        .attr('transform', `translate(${x}, ${y})`);
-
-    const info = node.info;
-    const lines = [
+    // Main box outline
+    const boxOutline = [
         `+${'-'.repeat(58)}+`,
         `| ${node.id.padEnd(56)} |`,
         `| ${info.hostname} (${node.role})${' '.repeat(45-info.hostname.length)} |`,
@@ -584,92 +352,88 @@ function createNodeBox(node, x, y) {
     // Add GPU information if available
     if (info.gpu_count > 0) {
         info.gpu_info.forEach((gpu, i) => {
-            lines.push(`| GPU ${i+1}: ${gpu.name}${' '.repeat(Math.max(0, 53-gpu.name.length))} |`);
-            // Add GPU memory bar
+            boxOutline.push(`| GPU ${i+1}: ${gpu.name}${' '.repeat(Math.max(0, 53-gpu.name.length))} |`);
             const memUsage = gpu.current_memory / gpu.total_memory * 100;
             const barWidth = 40;
             const filledChars = Math.floor(memUsage * barWidth / 100);
             const bar = '[' + '='.repeat(filledChars) + ' '.repeat(barWidth - filledChars) + ']';
-            lines.push(`| Memory: ${bar} ${memUsage.toFixed(1)}%${' '.repeat(8)} |`);
+            boxOutline.push(`| Memory: ${bar} ${memUsage.toFixed(1)}%${' '.repeat(8)} |`);
         });
     }
 
-    lines.push(`+${'-'.repeat(58)}+`);
+    boxOutline.push(`+${'-'.repeat(58)}+`);
 
-    // Add status indicator
-    const statusColor = node.role === 'master' ? '#ff4444' : '#4CAF50';
-    boxGroup.append('circle')
-        .attr('r', 5)
-        .attr('cx', -140)
-        .attr('cy', 0)
-        .attr('fill', statusColor);
+    // Create the box
+    const box = nodeGroup.append('g')
+        .attr('class', 'node-box');
 
-    // Add box text
-    lines.forEach((line, i) => {
-        boxGroup.append('text')
+    // Add box text lines
+    boxOutline.forEach((line, i) => {
+        box.append('text')
             .attr('x', -130)
-            .attr('y', (i - lines.length/2) * 20)
+            .attr('y', (i - boxOutline.length/2) * 20)
             .attr('class', 'node-text')
             .text(line);
     });
 
-    return boxGroup;
+    // Add status indicator
+    const statusColor = node.role === 'master' ? '#ff4444' : '#4CAF50';
+    box.append('circle')
+        .attr('r', 5)
+        .attr('cx', -140)
+        .attr('cy', -boxOutline.length/2 * 20 + 15)
+        .attr('fill', statusColor);
+
+    // Add metrics bars
+    const metricsGroup = box.append('g')
+        .attr('transform', `translate(-120, ${boxOutline.length/2 * 20 + 10})`);
+
+    // CPU usage bar
+    addMetricBar(metricsGroup, 'CPU', node.metrics?.cpu_usage || 0, 0);
+    
+    // Memory usage bar
+    const memUsage = (info.total_memory - info.available_memory) / info.total_memory * 100;
+    addMetricBar(metricsGroup, 'MEM', memUsage, 25);
+
+    // Add hover interaction
+    box.on('mouseover', () => showTooltip(node))
+       .on('mouseout', hideTooltip);
 }
 
-function createConnectionLine(x1, y1, x2, y2) {
-    const points = [];
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    const steps = Math.abs(dy) / 20;
+// Helper function to add metric bars
+function addMetricBar(group, label, value, yOffset) {
+    const barWidth = 100;
+    const barHeight = 10;
 
-    for (let i = 0; i <= steps; i++) {
-        points.push([x1, y1 + (dy * i / steps)]);
-    }
+    group.append('text')
+        .attr('x', -30)
+        .attr('y', yOffset + 8)
+        .attr('class', 'metric-label')
+        .text(label);
 
-    const line = g.append('g').attr('class', 'connection');
+    group.append('rect')
+        .attr('x', 0)
+        .attr('y', yOffset)
+        .attr('width', barWidth)
+        .attr('height', barHeight)
+        .attr('class', 'metric-bar-bg');
 
-    // Create dotted line effect using ASCII characters
-    points.forEach((point, i) => {
-        if (i % 2 === 0) {
-            line.append('text')
-                .attr('x', point[0])
-                .attr('y', point[1])
-                .attr('text-anchor', 'middle')
-                .attr('class', 'connection-text')
-                .text('|');
-        }
-    });
+    group.append('rect')
+        .attr('x', 0)
+        .attr('y', yOffset)
+        .attr('width', value * barWidth / 100)
+        .attr('height', barHeight)
+        .attr('class', 'metric-bar-fill')
+        .attr('fill', value > 90 ? '#ff4444' : value > 70 ? '#ffaa00' : '#33ff33');
+
+    group.append('text')
+        .attr('x', barWidth + 10)
+        .attr('y', yOffset + 8)
+        .attr('class', 'metric-value')
+        .text(`${value.toFixed(1)}%`);
 }
 
-function createClusterStats(data, x, y) {
-    const totalCPUs = data.nodes.reduce((acc, n) => acc + n.info.cpu_count, 0);
-    const totalGPUs = data.nodes.reduce((acc, n) => acc + n.info.gpu_count, 0);
-    const totalMemory = data.nodes.reduce((acc, n) => acc + n.info.total_memory, 0);
-
-    const statsGroup = g.append('g')
-        .attr('class', 'cluster-stats')
-        .attr('transform', `translate(${x}, ${y})`);
-
-    const lines = [
-        `+${'-'.repeat(30)}+`,
-        '| Cluster Statistics        |',
-        `+${'-'.repeat(30)}+`,
-        `| Nodes: ${data.nodes.length.toString().padEnd(20)} |`,
-        `| CPUs:  ${totalCPUs.toString().padEnd(20)} |`,
-        `| GPUs:  ${totalGPUs.toString().padEnd(20)} |`,
-        `| RAM:   ${formatBytes(totalMemory).padEnd(20)} |`,
-        `+${'-'.repeat(30)}+`
-    ];
-
-    lines.forEach((line, i) => {
-        statsGroup.append('text')
-            .attr('y', i * 20)
-            .attr('class', 'stats-text')
-            .text(line);
-    });
-}
-
-// Update visualization function
+// Update the visualization function
 function updateVisualization(data) {
     if (!data || !data.nodes || !data.links) {
         console.warn('Invalid topology data received');
@@ -683,20 +447,30 @@ function updateVisualization(data) {
     // Remove old nodes
     nodeElements.exit().remove();
 
-    // Add new nodes
+    // Add new nodes with fixed positions
     const nodeEnter = nodeElements.enter()
         .append('g')
-        .attr('class', 'node')
-        .attr('transform', d => `translate(${d.fx || width/2},${d.fy || height/2})`);
+        .attr('class', 'node');
+
+    // Position nodes
+    const masterNode = data.nodes.find(n => n.role === 'master');
+    const workerNodes = data.nodes.filter(n => n.role !== 'master');
+
+    if (masterNode) {
+        masterNode.fx = width / 2;
+        masterNode.fy = height / 3;
+    }
+
+    // Position worker nodes in a semi-circle below master
+    workerNodes.forEach((node, i) => {
+        const angle = (Math.PI / (workerNodes.length + 1)) * (i + 1);
+        const radius = 300;
+        node.fx = width/2 + radius * Math.cos(angle);
+        node.fy = height/3 + radius * Math.sin(angle);
+    });
 
     // Create node boxes
-    nodeEnter.each(createNodeBox);
-    
-    // Add health indicators
-    addHealthIndicator(nodeEnter);
-    
-    // Add GPU metrics if available
-    addGPUMetrics(nodeEnter);
+    nodeElements.merge(nodeEnter).each(createNodeBox);
 
     // Update links
     const linkElements = g.selectAll('.link')
@@ -705,7 +479,7 @@ function updateVisualization(data) {
     // Remove old links
     linkElements.exit().remove();
 
-    // Add new links
+    // Add new links with ASCII-style
     linkElements.enter()
         .append('path')
         .attr('class', 'link')
@@ -713,10 +487,7 @@ function updateVisualization(data) {
             const sourceNode = data.nodes.find(n => n.id === d.source);
             const targetNode = data.nodes.find(n => n.id === d.target);
             if (sourceNode && targetNode) {
-                const dx = targetNode.fx - sourceNode.fx;
-                const dy = targetNode.fy - sourceNode.fy;
-                const dr = Math.sqrt(dx * dx + dy * dy) * 1.2;
-                return `M${sourceNode.fx},${sourceNode.fy}A${dr},${dr} 0 0,1 ${targetNode.fx},${targetNode.fy}`;
+                return createASCIILink(sourceNode.fx, sourceNode.fy, targetNode.fx, targetNode.fy);
             }
             return '';
         });
@@ -726,32 +497,44 @@ function updateVisualization(data) {
     updateModelPanel(data);
 }
 
-// Add styles
-const terminalStyles = `
+// Create ASCII-style link path
+function createASCIILink(x1, y1, x2, y2) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const dr = Math.sqrt(dx * dx + dy * dy) * 1.2;
+    return `M${x1},${y1}A${dr},${dr} 0 0,1 ${x2},${y2}`;
+}
+
+// Add these styles
+const additionalStyles = `
     .node-text {
         font-family: 'Courier New', monospace;
         fill: #33ff33;
-        font-size: 14px;
+        font-size: 12px;
     }
-    .connection-text {
+    .link {
+        stroke: #33ff33;
+        stroke-width: 2px;
+        stroke-dasharray: 5,5;
+    }
+    .metric-bar-bg {
+        fill: rgba(51, 255, 51, 0.1);
+        stroke: #33ff33;
+        stroke-width: 1px;
+    }
+    .metric-bar-fill {
+        fill: #33ff33;
+    }
+    .metric-label, .metric-value {
         font-family: 'Courier New', monospace;
         fill: #33ff33;
-        font-size: 14px;
-    }
-    .stats-text {
-        font-family: 'Courier New', monospace;
-        fill: #33ff33;
-        font-size: 14px;
-    }
-    .cluster-title {
-        font-family: 'Courier New', monospace;
-        fill: #33ff33;
-        font-size: 18px;
+        font-size: 12px;
     }
 `;
 
+// Add the styles
 const styleSheet = document.createElement('style');
-styleSheet.textContent = terminalStyles;
+styleSheet.textContent = additionalStyles;
 document.head.appendChild(styleSheet);
 
 // Remove drag-related functions and simplify the simulation

@@ -74,6 +74,18 @@ class TopologyServer:
         # Cleanup dead connections
         self.connections -= dead_connections
 
+    async def broadcast_metrics(self, metrics_data):
+        """Broadcast metrics updates to all connected clients"""
+        logger.info(f"Broadcasting metrics to {len(self.connections)} clients")
+        logger.debug(f"Metrics data: {metrics_data}")
+        
+        topology_data = {
+            'nodes': metrics_data['nodes'],
+            'links': metrics_data['links']
+        }
+        
+        await self.broadcast_topology(topology_data)
+
     async def start(self):
         """Start the web server asynchronously"""
         config = uvicorn.Config(

@@ -211,6 +211,30 @@ class MasterNode(Node):
         self.connections.clear()
         self.nodes.clear()
 
+    async def _get_node_metrics(self):
+        """Get metrics from all connected nodes"""
+        metrics = {
+            'nodes': [],
+            'links': []
+        }
+        
+        for node_id, node_info in self.nodes.items():
+            node_data = {
+                'id': node_id,
+                'role': 'master' if node_id == self.id else 'worker',
+                'info': node_info.device_info
+            }
+            metrics['nodes'].append(node_data)
+            
+            # Add links between master and workers
+            if node_id != self.id:
+                metrics['links'].append({
+                    'source': self.id,
+                    'target': node_id
+                })
+        
+        return metrics
+
 def main():
     import argparse
     parser = argparse.ArgumentParser()

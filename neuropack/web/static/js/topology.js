@@ -54,8 +54,19 @@ ws.onmessage = function(event) {
     try {
         const data = JSON.parse(event.data);
         console.log('Parsed topology data:', data);
+        
+        // Initialize node positions on first update
+        if (data.nodes && !nodes.length) {
+            initializeNodePositions(data.nodes);
+        }
+        
+        // Update visualization
         if (data.nodes && data.links) {
+            nodes = data.nodes;
+            links = data.links;
             updateVisualization(data);
+            updateStats(data);
+            updateModelPanel(data);
         } else {
             console.error('Invalid topology data format:', data);
         }
@@ -665,7 +676,54 @@ function updateVisualization(data) {
         return;
     }
 
-    createTerminalLayout(data);
+    // Update nodes
+    const nodeElements = g.selectAll('.node')
+        .data(data.nodes, d => d.id);
+
+    // Remove old nodes
+    nodeElements.exit().remove();
+
+    // Add new nodes
+    const nodeEnter = nodeElements.enter()
+        .append('g')
+        .attr('class', 'node')
+        .attr('transform', d => `translate(${d.fx || width/2},${d.fy || height/2})`);
+
+    // Create node boxes
+    nodeEnter.each(createNodeBox);
+    
+    // Add health indicators
+    addHealthIndicator(nodeEnter);
+    
+    // Add GPU metrics if available
+    addGPUMetrics(nodeEnter);
+
+    // Update links
+    const linkElements = g.selectAll('.link')
+        .data(data.links, d => `${d.source}-${d.target}`);
+
+    // Remove old links
+    linkElements.exit().remove();
+
+    // Add new links
+    linkElements.enter()
+        .append('path')
+        .attr('class', 'link')
+        .attr('d', d => {
+            const sourceNode = data.nodes.find(n => n.id === d.source);
+            const targetNode = data.nodes.find(n => n.id === d.target);
+            if (sourceNode && targetNode) {
+                const dx = targetNode.fx - sourceNode.fx;
+                const dy = targetNode.fy - sourceNode.fy;
+                const dr = Math.sqrt(dx * dx + dy * dy) * 1.2;
+                return `M${sourceNode.fx},${sourceNode.fy}A${dr},${dr} 0 0,1 ${targetNode.fx},${targetNode.fy}`;
+            }
+            return '';
+        });
+
+    // Update stats and model panel
+    updateStats(data);
+    updateModelPanel(data);
 }
 
 // Add styles

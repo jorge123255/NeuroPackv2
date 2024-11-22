@@ -16,12 +16,14 @@ const zoom = d3.zoom()
     });
 svg.call(zoom);
 
-// Force simulation setup
+// Update the force simulation setup
 const simulation = d3.forceSimulation()
-    .force('link', d3.forceLink().id(d => d.id).distance(150))
-    .force('charge', d3.forceManyBody().strength(-500))
+    .force('link', d3.forceLink().id(d => d.id).distance(300))
+    .force('charge', d3.forceManyBody().strength(-1000))
     .force('center', d3.forceCenter(width / 2, height / 2))
-    .force('collision', d3.forceCollide().radius(80));
+    .force('collision', d3.forceCollide().radius(150))
+    .force('x', d3.forceX(width / 2).strength(0.1))
+    .force('y', d3.forceY(height / 2).strength(0.1));
 
 // Update the WebSocket connection to use the correct port
 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -530,26 +532,54 @@ function updateVisualization(data) {
         .call(d3.drag()
             .on('start', dragstarted)
             .on('drag', dragged)
-            .on('end', dragended));
+            .on('end', dragended))
+        .on('dblclick', dblclick);
 
-    // Update force simulation
+    // Initialize positions
+    initializeNodePositions(data.nodes);
+
+    // Update simulation
     simulation
         .nodes(data.nodes)
         .force('link').links(data.links);
 
-    // Update positions on tick
+    // Add hover effects
+    node.on('mouseover', function(event, d) {
+            d3.select(this)
+                .transition()
+                .duration(200)
+                .style('filter', 'brightness(1.2)');
+        })
+        .on('mouseout', function(event, d) {
+            d3.select(this)
+                .transition()
+                .duration(200)
+                .style('filter', null);
+        });
+
+    // Add smooth transitions for link updates
     simulation.on('tick', () => {
         link.select('path')
             .attr('d', d => {
                 const dx = d.target.x - d.source.x;
                 const dy = d.target.y - d.source.y;
-                return `M${d.source.x},${d.source.y}L${d.target.x},${d.target.y}`;
-            });
+                const dr = Math.sqrt(dx * dx + dy * dy) * 2; // Curved lines
+                return `M${d.source.x},${d.source.y}A${dr},${dr} 0 0,1 ${d.target.x},${d.target.y}`;
+            })
+            .attr('stroke-dasharray', '5,5')
+            .attr('stroke-dashoffset', '0')
+            .transition()
+            .duration(50)
+            .ease(d3.easeLinear)
+            .attr('stroke-dashoffset', 10);
 
-        node.attr('transform', d => `translate(${d.x},${d.y})`);
+        node.transition()
+            .duration(50)
+            .attr('transform', d => `translate(${d.x},${d.y})`);
     });
 
-    simulation.alpha(1).restart();
+    // Gradually cool down the simulation
+    simulation.alpha(1).alphaDecay(0.02).restart();
 
     // Update model panel
     updateModelPanel(data);
@@ -606,8 +636,16 @@ function dragged(event, d) {
 
 function dragended(event, d) {
     if (!event.active) simulation.alphaTarget(0);
+    // Don't reset fx and fy to null - this makes the node stay where it's dragged
+    // d.fx = null;
+    // d.fy = null;
+}
+
+// Add double-click to release node
+function dblclick(event, d) {
     d.fx = null;
     d.fy = null;
+    simulation.alpha(0.3).restart();
 }
 
 // Handle window resize
@@ -753,3 +791,74 @@ const additionalStyles = `
 const additionalStyleSheet = document.createElement('style');
 additionalStyleSheet.textContent = additionalStyles;
 document.head.appendChild(additionalStyleSheet);
+
+// Add custom layout for master and worker nodes
+function initializeNodePositions(nodes) {
+    const masterNode = nodes.find(n => n.role === 'master');
+    const workerNodes = nodes.filter(n => n.role !== 'master');
+    
+    if (masterNode) {
+        // Place master node in the center
+        masterNode.fx = width / 2;
+        masterNode.fy = height / 2;
+        
+        // Arrange worker nodes in a circle around the master
+        const radius = 400; // Distance from center
+        workerNodes.forEach((node, i) => {
+            const angle = (i / workerNodes.length) * 2 * Math.PI;
+            node.x = width / 2 + radius * Math.cos(angle);
+            node.y = height / 2 + radius * Math.sin(angle);
+        });
+    }
+}
+
+// Add a context menu for node actions
+function addContextMenu(node) {
+    node.on('contextmenu', (event, d) => {
+        event.preventDefault();
+        
+        const menu = d3.select('body')
+            .append('div')
+            .attr('class', 'context-menu')
+            .style('position', 'absolute')
+            .style('left', `${event.pageX}px`)
+            .style('top', `${event.pageY}px`)
+            .style('background', 'rgba(0, 0, 0, 0.9)')
+            .style('border', '1px solid #33ff33')
+            .style('padding', '5px')
+            .style('z-index', 1000);
+
+        menu.append('div')
+            .text('Reset Position')
+            .style('cursor', 'pointer')
+            .style('padding', '5px')
+            .on('click', () => {
+                d.fx = null;
+                d.fy = null;
+                simulation.alpha(0.3).restart();
+                menu.remove();
+            });
+
+        menu.append('div')
+            .text('Pin/Unpin')
+            .style('cursor', 'pointer')
+            .style('padding', '5px')
+            .on('click', () => {
+                if (d.fx === null) {
+                    d.fx = d.x;
+                    d.fy = d.y;
+                } else {
+                    d.fx = null;
+                    d.fy = null;
+                }
+                simulation.alpha(0.3).restart();
+                menu.remove();
+            });
+
+        // Close menu on click outside
+        d3.select('body').on('click.context-menu', () => {
+            menu.remove();
+            d3.select('body').on('click.context-menu', null);
+        });
+    });
+}

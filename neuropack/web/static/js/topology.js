@@ -484,6 +484,159 @@ function createNodeBox(node) {
             .attr('y', d.y)
             .text(d.char);
     });
+
+    addPerformanceGraphs(nodeGroup, node);
+    addModelLoadingStatus(nodeGroup, node);
+    addResourceMeters(nodeGroup, node);
+    
+    // Start health monitoring
+    updateNodeHealth(nodeGroup);
+}
+
+// Add performance monitoring graphs
+function addPerformanceGraphs(nodeGroup, node) {
+    const graphGroup = nodeGroup.append('g')
+        .attr('class', 'performance-graphs')
+        .attr('transform', 'translate(-120, 80)');
+
+    // CPU Usage Graph
+    const cpuGraph = graphGroup.append('g')
+        .attr('class', 'cpu-graph');
+    
+    const cpuData = new Array(30).fill(0);
+    
+    cpuGraph.append('rect')
+        .attr('class', 'graph-bg')
+        .attr('width', 100)
+        .attr('height', 20);
+        
+    const cpuLine = d3.line()
+        .x((d, i) => i * (100/30))
+        .y(d => 20 - (d * 20/100));
+        
+    cpuGraph.append('path')
+        .attr('class', 'cpu-line')
+        .attr('d', cpuLine(cpuData))
+        .style('stroke', '#33ff33')
+        .style('fill', 'none');
+
+    // Memory Usage Graph
+    const memGraph = graphGroup.append('g')
+        .attr('class', 'mem-graph')
+        .attr('transform', 'translate(0, 30)');
+        
+    // Similar setup for memory graph...
+}
+
+// Add real-time model loading indicators
+function addModelLoadingStatus(nodeGroup, node) {
+    const modelGroup = nodeGroup.append('g')
+        .attr('class', 'model-status')
+        .attr('transform', 'translate(-120, -60)');
+
+    Object.entries(node.info.loaded_models || {}).forEach(([name, model], i) => {
+        const status = modelGroup.append('g')
+            .attr('transform', `translate(0, ${i * 20})`);
+            
+        status.append('circle')
+            .attr('r', 4)
+            .attr('fill', model.loaded ? '#4CAF50' : '#ff4444');
+            
+        status.append('text')
+            .attr('x', 10)
+            .attr('class', 'model-name')
+            .text(name);
+    });
+}
+
+// Add network traffic visualization
+function addNetworkTraffic(link) {
+    const particles = link.append('g')
+        .attr('class', 'traffic-particles')
+        .selectAll('circle')
+        .data(d3.range(5))
+        .enter()
+        .append('circle')
+        .attr('r', 2)
+        .attr('fill', '#33ff33');
+        
+    function animateParticles() {
+        particles.each(function(d) {
+            d3.select(this)
+                .attr('opacity', 1)
+                .transition()
+                .duration(2000)
+                .attr('transform', `translate(${Math.random() * 100}, 0)`)
+                .attr('opacity', 0)
+                .on('end', animateParticles);
+        });
+    }
+    
+    animateParticles();
+}
+
+// Add resource utilization meters
+function addResourceMeters(nodeGroup, node) {
+    const meterGroup = nodeGroup.append('g')
+        .attr('class', 'resource-meters')
+        .attr('transform', 'translate(60, -40)');
+
+    // CPU Meter
+    const cpuMeter = meterGroup.append('g')
+        .attr('class', 'cpu-meter');
+        
+    cpuMeter.append('rect')
+        .attr('class', 'meter-bg')
+        .attr('width', 60)
+        .attr('height', 8);
+        
+    cpuMeter.append('rect')
+        .attr('class', 'meter-fill')
+        .attr('width', `${node.metrics?.cpu_usage || 0}%`)
+        .attr('height', 8);
+
+    // Memory Meter
+    const memMeter = meterGroup.append('g')
+        .attr('class', 'memory-meter')
+        .attr('transform', 'translate(0, 15)');
+        
+    // Similar setup for memory meter...
+}
+
+// Add node health monitoring
+function updateNodeHealth(node) {
+    const healthStatus = calculateNodeHealth(node);
+    
+    node.select('.health-indicator')
+        .transition()
+        .duration(500)
+        .attr('fill', healthStatus.color)
+        .attr('r', healthStatus.critical ? 8 : 5);
+        
+    if (healthStatus.critical) {
+        node.select('.node-box')
+            .transition()
+            .duration(500)
+            .style('stroke', '#ff4444')
+            .transition()
+            .duration(500)
+            .style('stroke', '#33ff33')
+            .on('end', () => updateNodeHealth(node));
+    }
+}
+
+function calculateNodeHealth(node) {
+    const metrics = node.metrics || {};
+    const critical = 
+        metrics.cpu_usage > 90 ||
+        metrics.memory_usage > 90 ||
+        (node.info.gpu_count > 0 && node.info.gpu_info.some(gpu => gpu.utilization > 95));
+        
+    return {
+        critical,
+        color: critical ? '#ff4444' : 
+               metrics.cpu_usage > 70 ? '#ffaa00' : '#4CAF50'
+    };
 }
 
 // Add real-time updates
@@ -907,4 +1060,241 @@ function addContextMenu(node) {
             d3.select('body').on('click.context-menu', null);
         });
     });
+}
+
+// Add these style updates
+const enhancedStyles = `
+    .cpu-line {
+        stroke-width: 2px;
+    }
+    .graph-bg {
+        fill: rgba(51, 255, 51, 0.1);
+        stroke: #33ff33;
+    }
+    .traffic-particles circle {
+        filter: blur(1px);
+    }
+    .model-name {
+        font-size: 12px;
+        fill: #33ff33;
+    }
+    .critical-alert {
+        animation: pulse 1s infinite;
+    }
+    @keyframes pulse {
+        0% { opacity: 1; }
+        50% { opacity: 0.5; }
+        100% { opacity: 1; }
+    }
+`;
+
+// Update the node creation to include new features
+function createNodeBox(node) {
+    const nodeGroup = d3.select(this);
+    
+    // ... existing node box creation code ...
+    
+    addPerformanceGraphs(nodeGroup, node);
+    addModelLoadingStatus(nodeGroup, node);
+    addResourceMeters(nodeGroup, node);
+    
+    // Start health monitoring
+    updateNodeHealth(nodeGroup);
+}
+
+// Add GPU-specific visualization
+function addGPUMetrics(nodeGroup, node) {
+    if (!node.info.gpu_count) return;
+    
+    const gpuGroup = nodeGroup.append('g')
+        .attr('class', 'gpu-metrics')
+        .attr('transform', 'translate(-100, 120)');
+
+    node.info.gpu_info.forEach((gpu, i) => {
+        const gpuMetric = gpuGroup.append('g')
+            .attr('transform', `translate(0, ${i * 30})`);
+
+        // GPU Name
+        gpuMetric.append('text')
+            .attr('class', 'gpu-name')
+            .attr('x', 0)
+            .attr('y', 0)
+            .text(`GPU ${i}: ${gpu.name.split(' ')[0]}`); // Show shortened name
+
+        // Memory Usage
+        const memUsage = (gpu.current_memory / gpu.total_memory) * 100;
+        
+        gpuMetric.append('rect')
+            .attr('class', 'gpu-memory-bg')
+            .attr('x', 0)
+            .attr('y', 5)
+            .attr('width', 80)
+            .attr('height', 6);
+
+        gpuMetric.append('rect')
+            .attr('class', 'gpu-memory-fill')
+            .attr('x', 0)
+            .attr('y', 5)
+            .attr('width', `${memUsage}%`)
+            .attr('height', 6)
+            .attr('fill', memUsage > 90 ? '#ff4444' : '#33ff33');
+
+        // Utilization indicator
+        if (gpu.utilization !== undefined) {
+            gpuMetric.append('text')
+                .attr('class', 'gpu-util')
+                .attr('x', 85)
+                .attr('y', 10)
+                .text(`${gpu.utilization}%`);
+        }
+    });
+}
+
+// Enhanced resource meters with both core and distributed node metrics
+function updateResourceMeters(nodeGroup, node) {
+    // CPU Usage
+    const cpuUsage = node.metrics?.cpu_usage || 
+                    (node.info.cpu_count ? 
+                        (psutil.cpu_percent() || 0) : 0);
+
+    nodeGroup.select('.cpu-meter .meter-fill')
+        .transition()
+        .duration(1000)
+        .attr('width', `${cpuUsage}%`);
+
+    // Memory Usage
+    const memTotal = node.info.total_memory;
+    const memAvail = node.info.available_memory;
+    const memUsage = ((memTotal - memAvail) / memTotal) * 100;
+
+    nodeGroup.select('.memory-meter .meter-fill')
+        .transition()
+        .duration(1000)
+        .attr('width', `${memUsage}%`)
+        .attr('fill', memUsage > 90 ? '#ff4444' : 
+              memUsage > 70 ? '#ffaa00' : '#33ff33');
+}
+
+// Add model registry visualization
+function updateModelRegistry(nodeGroup, node) {
+    const modelGroup = nodeGroup.select('.model-status');
+    if (!modelGroup.empty()) {
+        const models = Object.entries(node.info.loaded_models || {});
+        
+        const modelUpdate = modelGroup.selectAll('.model-entry')
+            .data(models, d => d[0]);
+
+        // Remove old models
+        modelUpdate.exit().remove();
+
+        // Add new models
+        const modelEnter = modelUpdate.enter()
+            .append('g')
+            .attr('class', 'model-entry')
+            .attr('transform', (d, i) => `translate(0, ${i * 20})`);
+
+        modelEnter.append('text')
+            .attr('class', 'model-name')
+            .attr('x', 10)
+            .text(d => d[0]);
+
+        modelEnter.append('circle')
+            .attr('r', 4)
+            .attr('cx', 0)
+            .attr('cy', -4);
+
+        // Update all models
+        modelGroup.selectAll('.model-entry')
+            .select('circle')
+            .attr('fill', d => {
+                const model = d[1];
+                if (model.current_tasks > 0) return '#ffaa00';
+                return model.loaded ? '#4CAF50' : '#ff4444';
+            });
+    }
+}
+
+// Add ASCII art performance indicators
+function addASCIIMeters(nodeGroup, node) {
+    const asciiGroup = nodeGroup.append('g')
+        .attr('class', 'ascii-meters')
+        .attr('transform', 'translate(-120, 40)');
+
+    // CPU Meter
+    asciiGroup.append('text')
+        .attr('class', 'ascii-meter')
+        .text('[----------]')
+        .attr('x', 0)
+        .attr('y', 0);
+
+    // Memory Meter
+    asciiGroup.append('text')
+        .attr('class', 'ascii-meter')
+        .text('[----------]')
+        .attr('x', 0)
+        .attr('y', 20);
+
+    function updateASCIIMeters() {
+        const cpuUsage = node.metrics?.cpu_usage || 0;
+        const memUsage = ((node.info.total_memory - node.info.available_memory) / 
+                         node.info.total_memory * 100) || 0;
+
+        const cpuBars = Math.round(cpuUsage / 10);
+        const memBars = Math.round(memUsage / 10);
+
+        asciiGroup.select('text:nth-child(1)')
+            .text(`[${'|'.repeat(cpuBars)}${'-'.repeat(10-cpuBars)}]`);
+
+        asciiGroup.select('text:nth-child(2)')
+            .text(`[${'|'.repeat(memBars)}${'-'.repeat(10-memBars)}]`);
+    }
+
+    // Initial update
+    updateASCIIMeters();
+    
+    // Return update function for external use
+    return updateASCIIMeters;
+}
+
+// Update the main visualization function
+function updateVisualization(data) {
+    if (!data || !data.nodes || !data.links) {
+        console.warn('Invalid topology data received');
+        return;
+    }
+
+    // Initialize node positions
+    initializeNodePositions(data.nodes);
+
+    // Update nodes
+    const nodes = g.selectAll('.node')
+        .data(data.nodes, d => d.id);
+
+    // Remove old nodes
+    nodes.exit().remove();
+
+    // Add new nodes
+    const nodesEnter = nodes.enter()
+        .append('g')
+        .attr('class', d => `node ${d.role}`)
+        .each(createNodeBox);
+
+    // Update all nodes
+    g.selectAll('.node').each(function(d) {
+        const node = d3.select(this);
+        updateResourceMeters(node, d);
+        updateModelRegistry(node, d);
+        updateNodeHealth(node);
+    });
+
+    // Update links with traffic visualization
+    const links = g.selectAll('.link')
+        .data(data.links, d => `${d.source}-${d.target}`);
+
+    links.exit().remove();
+
+    const linksEnter = links.enter()
+        .append('g')
+        .attr('class', 'link')
+        .each(addNetworkTraffic);
 }

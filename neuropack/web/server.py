@@ -69,82 +69,100 @@ class TopologyServer:
         <!DOCTYPE html>
         <html>
         <head>
-            <title>NeuroPack Cluster Topology</title>
+            <title>NeuroPack LLM Cluster</title>
             <script src="https://d3js.org/d3.v7.min.js"></script>
             <style>
                 body {
                     margin: 0;
                     padding: 0;
-                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                    background: #1a1a1a;
-                    color: #ffffff;
+                    font-family: 'Courier New', monospace;
+                    background: #000000;
+                    color: #33ff33;
+                    overflow: hidden;
                 }
                 #topology {
                     width: 100vw;
                     height: 100vh;
                 }
-                .node {
-                    cursor: pointer;
-                }
-                .node circle {
-                    fill: #4CAF50;
-                    stroke: #fff;
+                .node-box {
+                    fill: rgba(0, 0, 0, 0.7);
+                    stroke: #33ff33;
                     stroke-width: 2px;
-                    transition: all 0.3s ease;
-                }
-                .node.master circle {
-                    fill: #ff4444;
-                }
-                .node:hover circle {
-                    filter: brightness(1.2);
                 }
                 .link {
-                    stroke: #666;
-                    stroke-width: 2px;
-                    stroke-opacity: 0.6;
+                    stroke: #33ff33;
+                    stroke-width: 1px;
+                    stroke-dasharray: 5,5;
                 }
                 .node text {
-                    fill: white;
+                    fill: #33ff33;
                     font-size: 12px;
-                    text-anchor: middle;
-                }
-                .tooltip {
-                    position: absolute;
-                    padding: 10px;
-                    background: rgba(0, 0, 0, 0.8);
-                    color: white;
-                    border-radius: 5px;
-                    pointer-events: none;
-                    font-size: 14px;
-                    z-index: 1000;
                 }
                 #stats {
                     position: fixed;
                     top: 20px;
                     right: 20px;
                     background: rgba(0, 0, 0, 0.8);
+                    border: 1px solid #33ff33;
                     padding: 15px;
-                    border-radius: 5px;
-                    min-width: 200px;
+                    font-family: 'Courier New', monospace;
                 }
-                .stats-title {
-                    font-size: 16px;
-                    font-weight: bold;
+                .connection-status {
                     margin-bottom: 10px;
+                    padding: 5px;
+                    border-bottom: 1px solid #33ff33;
                 }
-                .stats-item {
+                .gpu-meter {
                     margin: 5px 0;
-                    font-size: 14px;
+                    height: 10px;
+                    background: rgba(51, 255, 51, 0.2);
+                    border: 1px solid #33ff33;
+                }
+                .gpu-meter-fill {
+                    height: 100%;
+                    background: #33ff33;
+                    transition: width 0.3s ease;
+                }
+                .cluster-header {
+                    position: fixed;
+                    top: 20px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    text-align: center;
+                    font-size: 24px;
+                    color: #33ff33;
+                }
+                .model-list {
+                    position: fixed;
+                    left: 20px;
+                    top: 20px;
+                    background: rgba(0, 0, 0, 0.8);
+                    border: 1px solid #33ff33;
+                    padding: 15px;
                 }
             </style>
         </head>
         <body>
+            <div class="cluster-header">
+                <pre>
+    _   __                    ____             __  
+   / | / /___  __  ___________/ __ \\____ ______/ /__
+  /  |/ / __ \\/ / / / ___/ __/ /_/ / __ `/ ___/ //_/
+ / /|  / /_/ / /_/ / /  / /_/ ____/ /_/ / /__/ ,<   
+/_/ |_/\\____/\\__,_/_/   \\__/_/    \\__,_/\\___/_/|_|  
+                </pre>
+                <div>Distributed LLM Cluster</div>
+            </div>
             <div id="topology"></div>
             <div id="stats">
+                <div class="connection-status"></div>
                 <div class="stats-title">Cluster Statistics</div>
                 <div id="stats-content"></div>
             </div>
-            <div class="tooltip" style="display: none;"></div>
+            <div class="model-list">
+                <div class="title">Available Models</div>
+                <div id="model-content"></div>
+            </div>
             <script src="/static/js/topology.js"></script>
         </body>
         </html>

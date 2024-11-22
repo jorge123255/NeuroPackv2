@@ -33,25 +33,36 @@ class TopologyServer:
             
         @self.app.websocket("/ws")
         async def websocket_endpoint(websocket: WebSocket):
-            await websocket.accept()
-            logger.info("New WebSocket client connected")
-            self.connections.add(websocket)
-            
-            # Send latest topology if available
-            if self.latest_topology:
-                try:
-                    await websocket.send_json(self.latest_topology)
-                except Exception as e:
-                    logger.error(f"Error sending initial topology: {e}")
-            
             try:
+                await websocket.accept()
+                logger.info("New WebSocket client connected")
+                self.connections.add(websocket)
+                
+                # Send initial topology if available
+                if self.latest_topology:
+                    try:
+                        await websocket.send_json(self.latest_topology)
+                    except Exception as e:
+                        logger.error(f"Error sending initial topology: {e}")
+                
+                # Keep connection alive and handle incoming messages
                 while True:
-                    # Keep connection alive
-                    await websocket.receive_text()
+                    try:
+                        # Wait for messages (ping/pong or actual data)
+                        data = await websocket.receive_text()
+                        if data == "ping":
+                            await websocket.send_text("pong")
+                    except WebSocketDisconnect:
+                        logger.info("WebSocket client disconnected normally")
+                        break
+                    except Exception as e:
+                        logger.error(f"WebSocket error: {e}")
+                        break
             except Exception as e:
-                logger.error(f"WebSocket error: {e}")
+                logger.error(f"Error in WebSocket connection: {e}")
             finally:
-                self.connections.remove(websocket)
+                if websocket in self.connections:
+                    self.connections.remove(websocket)
                 logger.info("WebSocket client disconnected")
                 
     async def broadcast_topology(self, topology_data):

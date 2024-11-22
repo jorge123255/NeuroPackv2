@@ -24,56 +24,64 @@ const simulation = d3.forceSimulation()
     .force('x', d3.forceX(width / 2).strength(0.5))
     .force('y', d3.forceY(height / 2).strength(0.5));
 
-// Update the WebSocket connection to use the correct port
+// Update the WebSocket connection setup
 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 const wsUrl = `${wsProtocol}//${window.location.hostname}:${window.location.port}/ws`;
-console.log('Connecting to WebSocket:', wsUrl);
+console.log('Attempting to connect to WebSocket:', wsUrl);
 
-const ws = new WebSocket(wsUrl);
+let ws = null;
+let reconnectAttempts = 0;
+const maxReconnectAttempts = 5;
 
-ws.onopen = () => {
-    console.log('WebSocket connected');
-    d3.select('.connection-status')
-        .style('color', '#4CAF50')
-        .text('● Connected to server');
-};
+function connectWebSocket() {
+    ws = new WebSocket(wsUrl);
 
-ws.onclose = () => {
-    console.error('WebSocket disconnected');
-    d3.select('.connection-status')
-        .style('color', '#ff4444')
-        .text('● Disconnected from server');
-};
+    ws.onopen = () => {
+        console.log('WebSocket connected');
+        reconnectAttempts = 0;
+        d3.select('.connection-status')
+            .style('color', '#4CAF50')
+            .text('● Connected to server');
+        startPingPong();
+    };
 
-ws.onerror = (error) => {
-    console.error('WebSocket error:', error);
-};
-
-ws.onmessage = function(event) {
-    console.log('Received topology data:', event.data);
-    try {
-        const data = JSON.parse(event.data);
-        console.log('Parsed topology data:', data);
+    ws.onclose = () => {
+        console.error('WebSocket disconnected');
+        d3.select('.connection-status')
+            .style('color', '#ff4444')
+            .text('● Disconnected from server');
         
-        // Initialize node positions on first update
-        if (data.nodes && !nodes.length) {
-            initializeNodePositions(data.nodes);
+        // Attempt to reconnect
+        if (reconnectAttempts < maxReconnectAttempts) {
+            reconnectAttempts++;
+            console.log(`Attempting to reconnect (${reconnectAttempts}/${maxReconnectAttempts})...`);
+            setTimeout(connectWebSocket, 2000);
         }
-        
-        // Update visualization
-        if (data.nodes && data.links) {
-            nodes = data.nodes;
-            links = data.links;
-            updateVisualization(data);
-            updateStats(data);
-            updateModelPanel(data);
-        } else {
-            console.error('Invalid topology data format:', data);
+    };
+
+    ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+    };
+
+    ws.onmessage = function(event) {
+        console.log('Received data:', event.data);
+        try {
+            const data = JSON.parse(event.data);
+            if (data.nodes && data.links) {
+                updateVisualization(data);
+                updateStats(data);
+                updateModelPanel(data);
+            } else {
+                console.error('Invalid data format:', data);
+            }
+        } catch (e) {
+            console.error('Error processing message:', e);
         }
-    } catch (e) {
-        console.error('Error processing message:', e);
-    }
-};
+    };
+}
+
+// Initial connection
+connectWebSocket();
 
 let nodes = [];
 let links = [];
@@ -748,4 +756,13 @@ function addContextMenu(node) {
             d3.select('body').on('click.context-menu', null);
         });
     });
+}
+
+// Add ping/pong mechanism
+function startPingPong() {
+    setInterval(() => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send('ping');
+        }
+    }, 30000); // Send ping every 30 seconds
 }

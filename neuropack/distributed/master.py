@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 import multiprocessing
-from typing import Dict, Set
+from typing import Dict, Set, List
 import websockets
 from dataclasses import asdict
 from neuropack.web.server import TopologyServer
@@ -20,6 +20,9 @@ class MasterNode(Node):
         self.nodes: Dict[str, DeviceInfo] = {}
         self.connections: Dict[str, websockets.WebSocketServerProtocol] = {}
         self.web_server = None
+        self.model_registry: Dict[str, Dict[str, ModelInfo]] = {}  # node_id -> {model_name: ModelInfo}
+        self.task_queue = asyncio.Queue()
+        self.performance_metrics = {}
         
     async def start(self):
         """Start the master node and web interface"""
@@ -31,23 +34,65 @@ class MasterNode(Node):
         # Create web server in the same event loop
         self.web_server = TopologyServer(host=self.host, port=self.web_port)
         
-        # Debug: Print initial state
-        logger.info(f"Initial nodes: {list(self.nodes.keys())}")
+        # Start monitoring tasks
+        self.monitor_task = asyncio.create_task(self._monitor_cluster())
+        self.metrics_task = asyncio.create_task(self._collect_metrics())
         
-        # Start both servers concurrently
         try:
             await asyncio.gather(
                 self.web_server.start(),
                 websockets.serve(self.handle_connection, self.host, self.port)
             )
-            logger.info("Both servers started successfully")
-            
-            # Debug: Send initial topology
-            await self.broadcast_topology()
             
         except Exception as e:
             logger.error(f"Error starting servers: {e}", exc_info=True)
-        
+
+    async def _monitor_cluster(self):
+        """Monitor cluster health and performance"""
+        while True:
+            try:
+                for node_id, info in self.nodes.items():
+                    # Update node metrics
+                    metrics = await self._get_node_metrics(node_id)
+                    self.performance_metrics[node_id] = metrics
+                    
+                    # Check node health
+                    if metrics['cpu_usage'] > 90 or metrics['memory_usage'] > 90:
+                        logger.warning(f"High resource usage on node {node_id}")
+                        
+                await self.broadcast_topology()
+                await asyncio.sleep(5)
+            except Exception as e:
+                logger.error(f"Error monitoring cluster: {e}")
+                await asyncio.sleep(5)
+
+    async def _collect_metrics(self):
+        """Collect detailed system metrics"""
+        while True:
+            try:
+                cluster_metrics = {
+                    'total_gpus': sum(node.gpu_count for node in self.nodes.values()),
+                    'total_memory': sum(node.total_memory for node in self.nodes.values()),
+                    'available_memory': sum(node.available_memory for node in self.nodes.values()),
+                    'loaded_models': self._get_loaded_models(),
+                    'active_tasks': len(self.task_queue._queue),
+                    'node_status': {
+                        node_id: {
+                            'status': 'active' if node_id in self.connections else 'disconnected',
+                            'last_seen': self.performance_metrics.get(node_id, {}).get('last_seen', 0)
+                        }
+                        for node_id in self.nodes
+                    }
+                }
+                
+                if self.web_server:
+                    await self.web_server.broadcast_metrics(cluster_metrics)
+                    
+                await asyncio.sleep(1)
+            except Exception as e:
+                logger.error(f"Error collecting metrics: {e}")
+                await asyncio.sleep(1)
+
     async def handle_connection(self, websocket: websockets.WebSocketServerProtocol):
         """Handle incoming WebSocket connections"""
         node_id = None
@@ -94,61 +139,75 @@ class MasterNode(Node):
             msg_type = data.get('type')
             
             if msg_type == 'status_update':
-                # Update node status
-                if 'device_info' in data:
-                    self.nodes[node_id] = DeviceInfo(**data['device_info'])
-                    await self.broadcast_topology()
+                await self._handle_status_update(node_id, data)
             elif msg_type == 'model_update':
-                # Handle model updates
-                if 'models' in data:
-                    if node_id in self.nodes:
-                        self.nodes[node_id].loaded_models = data['models']
-                        await self.broadcast_topology()
-                        
+                await self._handle_model_update(node_id, data)
+            elif msg_type == 'task_complete':
+                await self._handle_task_complete(node_id, data)
+            elif msg_type == 'resource_request':
+                await self._handle_resource_request(node_id, data)
+            elif msg_type == 'error':
+                await self._handle_error(node_id, data)
+                
         except Exception as e:
             logger.error(f"Error handling message from {node_id}: {e}")
 
     async def broadcast_topology(self):
         """Broadcast current topology to web interface"""
         try:
-            # Create topology data
             topology = {
                 'nodes': [
                     {
                         'id': node_id,
                         'info': asdict(info),
-                        'role': 'master' if node_id == self.id else 'worker'
+                        'role': 'master' if node_id == self.id else 'worker',
+                        'metrics': self.performance_metrics.get(node_id, {}),
+                        'models': self.model_registry.get(node_id, {}),
+                        'status': 'active' if node_id in self.connections else 'disconnected'
                     }
                     for node_id, info in self.nodes.items()
                 ],
                 'links': [
                     {
                         'source': self.id,
-                        'target': node_id
+                        'target': node_id,
+                        'status': 'active' if node_id in self.connections else 'disconnected',
+                        'traffic': self.performance_metrics.get(node_id, {}).get('network_traffic', 0)
                     }
                     for node_id in self.nodes.keys() if node_id != self.id
-                ]
+                ],
+                'cluster_stats': {
+                    'total_nodes': len(self.nodes),
+                    'active_nodes': len(self.connections),
+                    'total_gpus': sum(node.gpu_count for node in self.nodes.values()),
+                    'total_memory': sum(node.total_memory for node in self.nodes.values()),
+                    'loaded_models': self._get_loaded_models()
+                }
             }
-            
-            logger.info(f"Broadcasting topology: {len(self.nodes)} nodes")
-            logger.debug(f"Topology data: {topology}")
             
             if self.web_server:
                 await self.web_server.broadcast_topology(topology)
-                logger.info("Topology broadcast completed")
-            else:
-                logger.error("Web server not initialized")
             
         except Exception as e:
             logger.error(f"Error broadcasting topology: {e}", exc_info=True)
 
+    def _get_loaded_models(self) -> Dict[str, List[str]]:
+        """Get all loaded models across the cluster"""
+        models = {}
+        for node_id, node_models in self.model_registry.items():
+            for model_name, model_info in node_models.items():
+                if model_name not in models:
+                    models[model_name] = []
+                models[model_name].append(node_id)
+        return models
+
     async def shutdown(self):
         """Shutdown the master node"""
         logger.info("Shutting down master node...")
-        # Close all connections
+        self.monitor_task.cancel()
+        self.metrics_task.cancel()
         for connection in self.connections.values():
             await connection.close()
-        # Clear node data
         self.connections.clear()
         self.nodes.clear()
 

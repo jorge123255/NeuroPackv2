@@ -19,11 +19,10 @@ svg.call(zoom);
 // Update the force simulation setup
 const simulation = d3.forceSimulation()
     .force('link', d3.forceLink().id(d => d.id).distance(300))
-    .force('charge', d3.forceManyBody().strength(-1000))
-    .force('center', d3.forceCenter(width / 2, height / 2))
-    .force('collision', d3.forceCollide().radius(150))
-    .force('x', d3.forceX(width / 2).strength(0.1))
-    .force('y', d3.forceY(height / 2).strength(0.1));
+    .force('charge', d3.forceManyBody().strength(-2000))
+    .force('collision', d3.forceCollide().radius(200))
+    .force('x', d3.forceX(width / 2).strength(0.5))
+    .force('y', d3.forceY(height / 2).strength(0.5));
 
 // Update the WebSocket connection to use the correct port
 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -497,51 +496,68 @@ function startRealtimeUpdates() {
     }, 2000);
 }
 
-// Enhanced visualization update
+// Update node positioning function
+function initializeNodePositions(nodes) {
+    const masterNode = nodes.find(n => n.role === 'master');
+    const workerNodes = nodes.filter(n => n.role !== 'master');
+    
+    if (masterNode) {
+        // Fix master node in center
+        masterNode.fx = width / 2;
+        masterNode.fy = height / 2;
+        
+        // Position worker nodes in a hexagonal pattern around master
+        const radius = 350; // Distance from center
+        const angleStep = (2 * Math.PI) / Math.max(6, workerNodes.length);
+        
+        workerNodes.forEach((node, i) => {
+            const angle = i * angleStep;
+            // Fix worker nodes in position
+            node.fx = width / 2 + radius * Math.cos(angle);
+            node.fy = height / 2 + radius * Math.sin(angle);
+        });
+    }
+}
+
+// Update visualization function
 function updateVisualization(data) {
     if (!data || !data.nodes || !data.links) {
         console.warn('Invalid topology data received');
         return;
     }
 
-    // Update statistics
-    updateStats(data);
+    // Initialize fixed positions
+    initializeNodePositions(data.nodes);
 
     // Clear previous content
     g.selectAll('*').remove();
 
-    // Create links first (so they're behind nodes)
+    // Create curved links
     const link = g.selectAll('.link')
         .data(data.links)
         .enter()
-        .append('g')
-        .attr('class', 'link');
-
-    // Add dotted lines
-    link.append('path')
-        .attr('class', 'link-path')
+        .append('path')
+        .attr('class', 'link')
         .attr('stroke-dasharray', '5,5');
 
-    // Create nodes
+    // Create nodes (without drag behavior)
     const node = g.selectAll('.node')
         .data(data.nodes)
         .enter()
         .append('g')
         .attr('class', d => `node ${d.role}`)
-        .each(createNodeBox)
-        .call(d3.drag()
-            .on('start', dragstarted)
-            .on('drag', dragged)
-            .on('end', dragended))
-        .on('dblclick', dblclick);
+        .each(createNodeBox);
 
-    // Initialize positions
-    initializeNodePositions(data.nodes);
+    // Update positions immediately
+    node.attr('transform', d => `translate(${d.fx},${d.fy})`);
 
-    // Update simulation
-    simulation
-        .nodes(data.nodes)
-        .force('link').links(data.links);
+    // Update link paths
+    link.attr('d', d => {
+        const dx = d.target.fx - d.source.fx;
+        const dy = d.target.fy - d.source.fy;
+        const dr = Math.sqrt(dx * dx + dy * dy) * 1.2; // Curved lines
+        return `M${d.source.fx},${d.source.fy}A${dr},${dr} 0 0,1 ${d.target.fx},${d.target.fy}`;
+    });
 
     // Add hover effects
     node.on('mouseover', function(event, d) {
@@ -549,115 +565,50 @@ function updateVisualization(data) {
                 .transition()
                 .duration(200)
                 .style('filter', 'brightness(1.2)');
+            showTooltip(d);
         })
         .on('mouseout', function(event, d) {
             d3.select(this)
                 .transition()
                 .duration(200)
                 .style('filter', null);
+            hideTooltip();
         });
 
-    // Add smooth transitions for link updates
-    simulation.on('tick', () => {
-        link.select('path')
-            .attr('d', d => {
-                const dx = d.target.x - d.source.x;
-                const dy = d.target.y - d.source.y;
-                const dr = Math.sqrt(dx * dx + dy * dy) * 2; // Curved lines
-                return `M${d.source.x},${d.source.y}A${dr},${dr} 0 0,1 ${d.target.x},${d.target.y}`;
-            })
-            .attr('stroke-dasharray', '5,5')
-            .attr('stroke-dashoffset', '0')
-            .transition()
-            .duration(50)
-            .ease(d3.easeLinear)
-            .attr('stroke-dashoffset', 10);
-
-        node.transition()
-            .duration(50)
-            .attr('transform', d => `translate(${d.x},${d.y})`);
-    });
-
-    // Gradually cool down the simulation
-    simulation.alpha(1).alphaDecay(0.02).restart();
-
-    // Update model panel
+    // Update stats and model panel
+    updateStats(data);
     updateModelPanel(data);
-    
-    // Start real-time updates
     startRealtimeUpdates();
 }
 
-// Add these styles
-const extraStyles = `
-    .node-box {
-        fill: rgba(0, 0, 0, 0.8);
-        stroke: #33ff33;
-        stroke-width: 2px;
-    }
-    .meter-bg {
-        fill: rgba(51, 255, 51, 0.1);
-        stroke: #33ff33;
-        stroke-width: 1px;
-    }
-    .meter-fill {
-        opacity: 0.7;
-    }
-    .link-path {
-        stroke: #33ff33;
-        stroke-width: 2px;
-    }
-    .node text {
-        fill: #33ff33;
-        font-family: 'Courier New', monospace;
-    }
-    .ascii-decoration {
-        fill: #33ff33;
-        opacity: 0.5;
-    }
-`;
+// Remove drag-related functions and simplify the simulation
+simulation.on('tick', () => {
+    // No tick updates needed as nodes are fixed
+});
 
-// Add the styles to the document
-const styleSheet = document.createElement('style');
-styleSheet.textContent = extraStyles;
-document.head.appendChild(styleSheet);
-
-// Drag functions
-function dragstarted(event, d) {
-    if (!event.active) simulation.alphaTarget(0.3).restart();
-    d.fx = d.x;
-    d.fy = d.y;
-}
-
-function dragged(event, d) {
-    d.fx = event.x;
-    d.fy = event.y;
-}
-
-function dragended(event, d) {
-    if (!event.active) simulation.alphaTarget(0);
-    // Don't reset fx and fy to null - this makes the node stay where it's dragged
-    // d.fx = null;
-    // d.fy = null;
-}
-
-// Add double-click to release node
-function dblclick(event, d) {
-    d.fx = null;
-    d.fy = null;
-    simulation.alpha(0.3).restart();
-}
-
-// Handle window resize
+// Update window resize handler
 window.addEventListener('resize', () => {
     const width = window.innerWidth;
     const height = window.innerHeight;
     
     svg.attr('width', width)
         .attr('height', height);
+    
+    // Recalculate fixed positions on resize
+    const nodes = simulation.nodes();
+    initializeNodePositions(nodes);
+    
+    // Update node and link positions
+    g.selectAll('.node')
+        .attr('transform', d => `translate(${d.fx},${d.fy})`);
         
-    simulation.force('center', d3.forceCenter(width / 2, height / 2));
-    simulation.alpha(1).restart();
+    g.selectAll('.link')
+        .attr('d', d => {
+            const dx = d.target.fx - d.source.fx;
+            const dy = d.target.fy - d.source.fy;
+            const dr = Math.sqrt(dx * dx + dy * dy) * 1.2;
+            return `M${d.source.fx},${d.source.fy}A${dr},${dr} 0 0,1 ${d.target.fx},${d.target.fy}`;
+        });
 });
 
 // Add GPU utilization indicators
@@ -791,26 +742,6 @@ const additionalStyles = `
 const additionalStyleSheet = document.createElement('style');
 additionalStyleSheet.textContent = additionalStyles;
 document.head.appendChild(additionalStyleSheet);
-
-// Add custom layout for master and worker nodes
-function initializeNodePositions(nodes) {
-    const masterNode = nodes.find(n => n.role === 'master');
-    const workerNodes = nodes.filter(n => n.role !== 'master');
-    
-    if (masterNode) {
-        // Place master node in the center
-        masterNode.fx = width / 2;
-        masterNode.fy = height / 2;
-        
-        // Arrange worker nodes in a circle around the master
-        const radius = 400; // Distance from center
-        workerNodes.forEach((node, i) => {
-            const angle = (i / workerNodes.length) * 2 * Math.PI;
-            node.x = width / 2 + radius * Math.cos(angle);
-            node.y = height / 2 + radius * Math.sin(angle);
-        });
-    }
-}
 
 // Add a context menu for node actions
 function addContextMenu(node) {

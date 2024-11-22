@@ -278,8 +278,7 @@
             }
         });
 
-        // Add SVG filters for glow effect
-        const defs = svg.append('defs');
+        // Add glow filter here instead of creating new defs
         const filter = defs.append('filter')
             .attr('id', 'glow');
 
@@ -287,11 +286,9 @@
             .attr('stdDeviation', '2')
             .attr('result', 'coloredBlur');
 
-        const feMerge = filter.append('feMerge');
-        feMerge.append('feMergeNode')
+        filter.append('feMerge')
+            .append('feMergeNode')
             .attr('in', 'coloredBlur');
-        feMerge.append('feMergeNode')
-            .attr('in', 'SourceGraphic');
 
         // Add pulsing animation
         node.selectAll('.glow')

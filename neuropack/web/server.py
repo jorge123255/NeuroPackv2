@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
 import os
 
-class WebServer:
+class TopologyServer:
     def __init__(self, host="0.0.0.0", port=8080):
         self.host = host
         self.port = port
@@ -85,5 +85,5 @@ class WebServer:
         uvicorn.run(self.app, host=self.host, port=self.port)
 
 if __name__ == "__main__":
-    server = WebServer()
+    server = TopologyServer()
     server.run() 

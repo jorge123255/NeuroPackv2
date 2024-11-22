@@ -72,15 +72,41 @@
 
     // Add to the top of the file, after the initial const declarations
     const COLORS = {
-        master: '#00ff00',
-        worker: '#33ff99',
-        text: '#33ff33',
+        master: '#00ff44',
+        worker: '#00ccff',
+        text: '#e0ffe0',
         border: '#33ff33',
-        background: '#0a0a0a',
-        link: '#1a6b1a'
+        background: 'rgba(0, 20, 0, 0.7)',
+        link: '#00ff4455',
+        glow: {
+            master: '#00ff4455',
+            worker: '#00ccff55'
+        }
     };
 
-    // Update the node styling and add pulsing effect
+    // Add this new function for better initial node positioning
+    function initialNodePositions(nodes, width, height) {
+        const centerX = width / 2;
+        const centerY = height / 2;
+        const radius = Math.min(width, height) / 4;
+
+        // Position master node in center
+        const masterNode = nodes.find(n => n.role === 'master');
+        if (masterNode) {
+            masterNode.x = centerX;
+            masterNode.y = centerY;
+        }
+
+        // Position worker nodes in a circle around master
+        const workerNodes = nodes.filter(n => n.role === 'worker');
+        workerNodes.forEach((node, i) => {
+            const angle = (2 * Math.PI * i) / workerNodes.length;
+            node.x = centerX + radius * Math.cos(angle);
+            node.y = centerY + radius * Math.sin(angle);
+        });
+    }
+
+    // Update the visualization function
     function updateVisualization(data) {
         if (!data || !data.nodes || !data.links) {
             console.warn('Invalid topology data received');
@@ -90,21 +116,111 @@
         // Clear previous visualization
         g.selectAll('*').remove();
 
-        // Create simulation
+        // Initialize node positions
+        initialNodePositions(data.nodes, width, height);
+
+        // Update simulation with better forces
         const simulation = d3.forceSimulation(data.nodes)
-            .force('link', d3.forceLink(data.links).id(d => d.id).distance(200))
-            .force('charge', d3.forceManyBody().strength(-500))
-            .force('center', d3.forceCenter(width / 2, height / 2));
+            .force('link', d3.forceLink(data.links).id(d => d.id).distance(300))
+            .force('charge', d3.forceManyBody().strength(-1000))
+            .force('center', d3.forceCenter(width / 2, height / 2))
+            .force('collision', d3.forceCollide().radius(d => Math.sqrt(d.nodeWidth * d.nodeHeight) / 1.5))
+            .velocityDecay(0.6)
+            .alpha(0.5)
+            .alphaDecay(0.02);
+
+        // Create gradient for links
+        const defs = svg.append('defs');
+        const gradient = defs.append('linearGradient')
+            .attr('id', 'linkGradient')
+            .attr('gradientUnits', 'userSpaceOnUse');
+
+        gradient.append('stop')
+            .attr('offset', '0%')
+            .attr('stop-color', COLORS.master);
+        
+        gradient.append('stop')
+            .attr('offset', '100%')
+            .attr('stop-color', COLORS.worker);
 
         // Update link styling
         const link = g.selectAll('.link')
             .data(data.links)
-            .enter().append('line')
-            .attr('class', 'link')
-            .style('stroke', COLORS.link)
-            .style('stroke-opacity', 0.6)
+            .enter().append('g')
+            .attr('class', 'link-group');
+
+        // Add glowing link path
+        link.append('path')
+            .attr('class', 'link-glow')
+            .style('stroke', 'url(#linkGradient)')
+            .style('stroke-width', 4)
+            .style('stroke-opacity', 0.2)
+            .style('fill', 'none');
+
+        // Add main link path
+        link.append('path')
+            .attr('class', 'link-main')
+            .style('stroke', 'url(#linkGradient)')
             .style('stroke-width', 2)
-            .style('stroke-dasharray', '5,5');
+            .style('stroke-opacity', 0.8)
+            .style('fill', 'none')
+            .style('stroke-dasharray', '10,5');
+
+        // Add directional arrows
+        const marker = defs.append('marker')
+            .attr('id', 'arrowhead')
+            .attr('viewBox', '-10 -5 10 10')
+            .attr('refX', 0)
+            .attr('refY', 0)
+            .attr('markerWidth', 6)
+            .attr('markerHeight', 6)
+            .attr('orient', 'auto');
+
+        marker.append('path')
+            .attr('d', 'M -10,-5 L 0,0 L -10,5')
+            .style('fill', COLORS.text);
+
+        // Update the tick function
+        simulation.on('tick', () => {
+            link.selectAll('path')
+                .attr('d', d => {
+                    const dx = d.target.x - d.source.x;
+                    const dy = d.target.y - d.source.y;
+                    const dr = Math.sqrt(dx * dx + dy * dy);
+                    return `M${d.source.x},${d.source.y}A${dr},${dr} 0 0,1 ${d.target.x},${d.target.y}`;
+                });
+
+            node.attr('transform', d => `translate(${d.x},${d.y})`);
+        });
+
+        // Add glass-like effect to nodes
+        const glassEffect = defs.append('filter')
+            .attr('id', 'glass')
+            .attr('x', '-50%')
+            .attr('y', '-50%')
+            .attr('width', '200%')
+            .attr('height', '200%');
+
+        glassEffect.append('feGaussianBlur')
+            .attr('in', 'SourceAlpha')
+            .attr('stdDeviation', '4')
+            .attr('result', 'blur');
+
+        glassEffect.append('feOffset')
+            .attr('in', 'blur')
+            .attr('dx', '2')
+            .attr('dy', '2')
+            .attr('result', 'offsetBlur');
+
+        const feMerge = glassEffect.append('feMerge');
+        feMerge.append('feMergeNode')
+            .attr('in', 'offsetBlur');
+        feMerge.append('feMergeNode')
+            .attr('in', 'SourceGraphic');
+
+        // Update node styling with glass effect
+        node.selectAll('rect')
+            .style('filter', 'url(#glass)');
 
         // Update node styling
         const node = g.selectAll('.node')
@@ -210,18 +326,6 @@
             .text(d => `RAM: ${formatBytes(d.info.available_memory)} / ${formatBytes(d.info.total_memory)}`)
             .style('fill', COLORS.text)
             .style('font-size', '12px');
-
-        // Update positions
-        simulation.on('tick', () => {
-            link
-                .attr('x1', d => d.source.x)
-                .attr('y1', d => d.source.y)
-                .attr('x2', d => d.target.x)
-                .attr('y2', d => d.target.y);
-
-            node
-                .attr('transform', d => `translate(${d.x}, ${d.y})`);
-        });
 
         // Add tooltips
         node.on('mouseover', (event, d) => {

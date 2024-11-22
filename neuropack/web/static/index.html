@@ -19,16 +19,18 @@
         .tooltip {
             position: absolute;
             display: none;
-            background: rgba(0, 10, 0, 0.95);
+            background: rgba(0, 20, 0, 0.95);
+            backdrop-filter: blur(5px);
             border: 1px solid #33ff33;
-            box-shadow: 0 0 10px rgba(51, 255, 51, 0.3);
+            box-shadow: 0 0 20px rgba(51, 255, 51, 0.2);
             padding: 15px;
-            border-radius: 5px;
+            border-radius: 8px;
             max-width: 300px;
             pointer-events: none;
             color: #33ff33;
             font-family: 'Courier New', monospace;
             font-size: 12px;
+            line-height: 1.4;
             z-index: 1000;
         }
         .connection-status {
@@ -58,16 +60,16 @@
         }
         @keyframes pulse {
             0% {
-                stroke-opacity: 0.6;
-                stroke-width: 2px;
+                stroke-opacity: 0.4;
+                filter: drop-shadow(0 0 2px rgba(51, 255, 51, 0.5));
             }
             50% {
-                stroke-opacity: 1;
-                stroke-width: 3px;
+                stroke-opacity: 0.8;
+                filter: drop-shadow(0 0 8px rgba(51, 255, 51, 0.8));
             }
             100% {
-                stroke-opacity: 0.6;
-                stroke-width: 2px;
+                stroke-opacity: 0.4;
+                filter: drop-shadow(0 0 2px rgba(51, 255, 51, 0.5));
             }
         }
         @keyframes linkPulse {
@@ -80,6 +82,32 @@
             100% {
                 stroke-opacity: 0.4;
             }
+        }
+        .link-group path {
+            transition: stroke-opacity 0.3s;
+        }
+        .link-group:hover path {
+            stroke-opacity: 1;
+        }
+        .node {
+            transition: transform 0.3s ease-out;
+        }
+        .node:hover {
+            transform: scale(1.05);
+        }
+        @keyframes float {
+            0% {
+                transform: translateY(0px);
+            }
+            50% {
+                transform: translateY(-5px);
+            }
+            100% {
+                transform: translateY(0px);
+            }
+        }
+        .node {
+            animation: float 3s ease-in-out infinite;
         }
     </style>
 </head>

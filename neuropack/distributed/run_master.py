@@ -3,7 +3,10 @@ import signal
 import logging
 from neuropack.distributed.master import MasterNode
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 async def main():
@@ -11,8 +14,8 @@ async def main():
     
     # Handle shutdown gracefully
     loop = asyncio.get_event_loop()
-    loop.add_signal_handler(signal.SIGINT, lambda: asyncio.create_task(shutdown(master)))
-    loop.add_signal_handler(signal.SIGTERM, lambda: asyncio.create_task(shutdown(master)))
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, lambda: asyncio.create_task(shutdown(master)))
     
     try:
         logger.info("Starting NeuroPack Master Node")
@@ -22,8 +25,9 @@ async def main():
 
 async def shutdown(master):
     logger.info("Shutting down master node...")
-    if hasattr(master, 'web_process'):
-        master.web_process.terminate()
+    tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+    [task.cancel() for task in tasks]
+    await asyncio.gather(*tasks, return_exceptions=True)
     asyncio.get_event_loop().stop()
 
 if __name__ == "__main__":

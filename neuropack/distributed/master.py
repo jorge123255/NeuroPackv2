@@ -19,8 +19,7 @@ class MasterNode(Node):
         self.is_master = True
         self.nodes: Dict[str, DeviceInfo] = {}
         self.connections: Dict[str, websockets.WebSocketServerProtocol] = {}
-        self.web_server = TopologyServer(host=host, port=web_port)
-        self.web_process = None
+        self.web_server = None  # Will be initialized in start()
         
     async def start(self):
         """Start the master node and web interface"""
@@ -29,21 +28,29 @@ class MasterNode(Node):
         # Add self to nodes with master info
         self.nodes[self.id] = self.device_info
         
-        # Start web interface in separate process
-        self.web_process = multiprocessing.Process(
-            target=self.web_server.run
-        )
-        self.web_process.start()
+        # Create web server in the same event loop
+        self.web_server = TopologyServer(host=self.host, port=self.web_port)
+        web_task = asyncio.create_task(self.web_server.start())
         
         # Start WebSocket server
-        server = await websockets.serve(self.handle_connection, self.host, self.port)
+        ws_server = await websockets.serve(
+            self.handle_connection, 
+            self.host, 
+            self.port
+        )
+        
         logger.info(f"WebSocket server listening on ws://{self.host}:{self.port}")
+        logger.info(f"Web interface available at http://{self.host}:{self.web_port}")
         
         # Initial topology broadcast
         await self.broadcast_topology()
         
-        await server.wait_closed()
-            
+        # Keep running
+        try:
+            await asyncio.gather(web_task, ws_server.wait_closed())
+        except asyncio.CancelledError:
+            logger.info("Shutting down servers...")
+        
     async def handle_connection(self, websocket: websockets.WebSocketServerProtocol):
         """Handle incoming WebSocket connections"""
         node_id = None

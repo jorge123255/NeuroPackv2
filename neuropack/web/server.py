@@ -37,9 +37,7 @@ class TopologyServer:
             self.connections.add(websocket)
             try:
                 while True:
-                    # Keep connection alive and handle any incoming messages
-                    data = await websocket.receive_text()
-                    # You can handle client messages here if needed
+                    await websocket.receive_text()
             except Exception as e:
                 logger.error(f"WebSocket error: {e}")
             finally:
@@ -49,8 +47,9 @@ class TopologyServer:
     async def broadcast_topology(self, topology_data):
         """Broadcast topology updates to all connected clients"""
         logger.info(f"Broadcasting topology to {len(self.connections)} clients")
-        dead_connections = set()
+        logger.debug(f"Topology data: {topology_data}")
         
+        dead_connections = set()
         for connection in self.connections:
             try:
                 await connection.send_json(topology_data)
@@ -61,10 +60,16 @@ class TopologyServer:
         # Cleanup dead connections
         self.connections -= dead_connections
 
-    def run(self):
-        """Run the web server"""
-        logger.info(f"Starting web server on {self.host}:{self.port}")
-        uvicorn.run(self.app, host=self.host, port=self.port)
+    async def start(self):
+        """Start the web server asynchronously"""
+        config = uvicorn.Config(
+            self.app,
+            host=self.host,
+            port=self.port,
+            log_level="info"
+        )
+        server = uvicorn.Server(config)
+        await server.serve()
 
     def _get_default_html(self):
         """Return enhanced HTML template"""
@@ -173,4 +178,4 @@ class TopologyServer:
         
 if __name__ == "__main__":
     server = TopologyServer()
-    server.run() 
+    asyncio.run(server.start()) 

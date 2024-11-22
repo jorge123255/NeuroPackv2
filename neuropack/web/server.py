@@ -33,21 +33,24 @@ class TopologyServer:
         @self.app.websocket("/ws")
         async def websocket_endpoint(websocket: WebSocket):
             await websocket.accept()
+            logger.info("New WebSocket client connected")
             self.connections.add(websocket)
             try:
                 while True:
-                    await websocket.receive_text()  # Keep connection alive
+                    # Keep connection alive and handle any incoming messages
+                    data = await websocket.receive_text()
+                    # You can handle client messages here if needed
             except Exception as e:
                 logger.error(f"WebSocket error: {e}")
             finally:
                 self.connections.remove(websocket)
+                logger.info("WebSocket client disconnected")
                 
     async def broadcast_topology(self, topology_data):
         """Broadcast topology updates to all connected clients"""
         logger.info(f"Broadcasting topology to {len(self.connections)} clients")
-        logger.debug(f"Topology data: {topology_data}")
-        
         dead_connections = set()
+        
         for connection in self.connections:
             try:
                 await connection.send_json(topology_data)

@@ -16,6 +16,7 @@ class TopologyServer:
         self.host = host
         self.port = port
         self.app = FastAPI()
+        self.connections = set()  # Store active WebSocket connections
         self.setup_routes()
         
     def setup_routes(self):
@@ -29,6 +30,26 @@ class TopologyServer:
                 return FileResponse(str(index_path))
             return HTMLResponse(self._get_default_html())
             
+        @self.app.websocket("/ws")
+        async def websocket_endpoint(websocket: WebSocket):
+            await websocket.accept()
+            self.connections.add(websocket)
+            try:
+                while True:
+                    await websocket.receive_text()
+            except:
+                self.connections.remove(websocket)
+                
+    async def broadcast_topology(self, topology_data=None):
+        if topology_data is None:
+            topology_data = {"nodes": [], "links": []}
+        
+        for connection in self.connections:
+            try:
+                await connection.send_json(topology_data)
+            except:
+                self.connections.remove(connection)
+                
     def _get_default_html(self):
         """Return default HTML if index.html doesn't exist"""
         return """

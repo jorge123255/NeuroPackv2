@@ -2,13 +2,25 @@ import asyncio
 import json
 import logging
 import multiprocessing
-from typing import Dict, Set, List
+from typing import Dict, Set, List, Optional
 import websockets
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from neuropack.web.server import TopologyServer
 from neuropack.distributed.node import Node, DeviceInfo
+import aiohttp
 
 logger = logging.getLogger(__name__)
+
+@dataclass
+class ModelInfo:
+    name: str
+    size: int
+    loaded: bool
+    shards: List[Dict]
+    loading_progress: float = 0.0
+    current_requests: int = 0
+    total_tokens: int = 0
+    avg_latency: float = 0.0
 
 class MasterNode(Node):
     def __init__(self, host="0.0.0.0", port=8765, web_port=8080):
@@ -20,10 +32,17 @@ class MasterNode(Node):
         self.nodes: Dict[str, DeviceInfo] = {}
         self.connections: Dict[str, websockets.WebSocketServerProtocol] = {}
         self.web_server = None
-        self.model_registry: Dict[str, Dict[str, ModelInfo]] = {}  # node_id -> {model_name: ModelInfo}
+        
+        # Model management attributes
+        self.ollama_url = "http://localhost:11434/api"
+        self.available_models: Dict[str, ModelInfo] = {}
+        self.model_shards: Dict[str, Dict[str, List[int]]] = {}  # model -> {node_id: [layer_ids]}
+        self.model_queue = asyncio.Queue()
+        self.model_tasks = {}
+        self.model_registry: Dict[str, Dict[str, ModelInfo]] = {}
         self.task_queue = asyncio.Queue()
         self.performance_metrics = {}
-        
+
     async def start(self):
         """Start the master node and web interface"""
         logger.info(f"Starting master node on {self.host}:{self.port}")
@@ -37,6 +56,8 @@ class MasterNode(Node):
         # Start monitoring tasks
         self.monitor_task = asyncio.create_task(self._monitor_cluster())
         self.metrics_task = asyncio.create_task(self._collect_metrics())
+        self.model_monitor = asyncio.create_task(self._monitor_models())
+        self.model_loader = asyncio.create_task(self._process_model_queue())
         
         try:
             await asyncio.gather(
@@ -297,6 +318,137 @@ class MasterNode(Node):
             logger.error(f"Error reported from {node_id}: {error_type} - {error_msg}")
         except Exception as e:
             logger.error(f"Error handling error report from {node_id}: {e}")
+
+    async def _monitor_models(self):
+        """Monitor model status and performance"""
+        while True:
+            try:
+                for model_name, info in self.available_models.items():
+                    if info.loaded:
+                        # Update model metrics
+                        metrics = await self._get_model_metrics(model_name)
+                        info.current_requests = metrics.get('current_requests', 0)
+                        info.total_tokens = metrics.get('total_tokens', 0)
+                        info.avg_latency = metrics.get('avg_latency', 0.0)
+
+                await self.broadcast_topology()
+                await asyncio.sleep(5)
+            except Exception as e:
+                logger.error(f"Error monitoring models: {e}")
+                await asyncio.sleep(5)
+
+    async def _process_model_queue(self):
+        """Process queued model loading tasks"""
+        while True:
+            try:
+                task = await self.model_queue.get()
+                model_name = task['model']
+                node_id = task['node_id']
+
+                if task.get('full_model'):
+                    success = await self._load_model_on_node(node_id, model_name)
+                else:
+                    success = await self._load_model_shard(
+                        node_id, 
+                        model_name, 
+                        task['shard'], 
+                        task['layers']
+                    )
+
+                if success:
+                    logger.info(f"Successfully loaded {model_name} on {node_id}")
+                    await self.broadcast_topology()
+
+            except Exception as e:
+                logger.error(f"Error processing model queue: {e}")
+            finally:
+                self.model_queue.task_done()
+
+    async def load_model(self, model_name: str, distributed: bool = True) -> bool:
+        """Load a model with optional distribution"""
+        try:
+            model_info = await self._get_model_info(model_name)
+            if not model_info:
+                return False
+
+            available_gpus = self._get_available_gpus()
+            if not available_gpus:
+                logger.error("No GPUs available for model loading")
+                return False
+
+            if distributed and len(available_gpus) > 1:
+                shards = self._calculate_model_shards(model_info, available_gpus)
+                for shard in shards:
+                    await self.model_queue.put({
+                        'model': model_name,
+                        'shard': shard['shard_id'],
+                        'node_id': shard['node_id'],
+                        'layers': shard['layers']
+                    })
+                
+                self.model_shards[model_name] = {
+                    shard['node_id']: shard['layers'] 
+                    for shard in shards
+                }
+            else:
+                best_node = max(available_gpus.items(), key=lambda x: x[1]['free_memory'])[0]
+                await self.model_queue.put({
+                    'model': model_name,
+                    'node_id': best_node,
+                    'full_model': True
+                })
+
+            return True
+        except Exception as e:
+            logger.error(f"Error loading model {model_name}: {e}")
+            return False
+
+    async def _get_model_info(self, model_name: str) -> Optional[Dict]:
+        """Get model information from Ollama"""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"{self.ollama_url}/show/{model_name}") as response:
+                    if response.status == 200:
+                        return await response.json()
+                    return None
+        except Exception as e:
+            logger.error(f"Error getting model info: {e}")
+            return None
+
+    def _calculate_model_shards(self, model_info: Dict, available_gpus: Dict) -> List[Dict]:
+        """Calculate optimal model sharding across available GPUs"""
+        total_memory = model_info.get('size', 0)
+        total_layers = model_info.get('num_layers', 1)
+        
+        sorted_gpus = sorted(
+            available_gpus.items(), 
+            key=lambda x: x[1]['free_memory'], 
+            reverse=True
+        )
+
+        shards = []
+        layers_assigned = 0
+        
+        for i, (node_id, gpu_info) in enumerate(sorted_gpus):
+            if layers_assigned >= total_layers:
+                break
+                
+            gpu_memory = gpu_info['free_memory']
+            layers_for_gpu = int((gpu_memory / total_memory) * total_layers)
+            
+            if i == len(sorted_gpus) - 1:
+                layers_for_gpu = total_layers - layers_assigned
+            
+            if layers_for_gpu > 0:
+                shards.append({
+                    'node_id': node_id,
+                    'shard_id': i,
+                    'layers': list(range(layers_assigned, layers_assigned + layers_for_gpu)),
+                    'memory': (layers_for_gpu / total_layers) * total_memory
+                })
+                layers_assigned += layers_for_gpu
+
+        return shards
 
 def main():
     import argparse

@@ -19,6 +19,15 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+# Add Ollama installation
+RUN curl https://ollama.ai/install.sh | sh
+
+# Create Ollama directory
+RUN mkdir -p /root/.ollama
+
+# Add Ollama to PATH
+ENV PATH="/usr/local/bin:${PATH}"
+
 # SSH setup
 RUN mkdir -p /var/run/sshd /etc/ssh/keys && \
     echo "PermitRootLogin yes" >> /etc/ssh/sshd_config && \
@@ -105,11 +114,11 @@ COPY ./neuropack/distributed/master.py /app/NeuroPack/neuropack/distributed/
 COPY ./neuropack/distributed/node.py /app/NeuroPack/neuropack/distributed/
 
 # Add ports for node communication and web interface
-EXPOSE 8765 8080
+EXPOSE 8765 8080 11434
 
 # Copy startup script and make it executable
 COPY docker/start_master.sh /app/start_master.sh
 RUN chmod +x /app/start_master.sh
 
 # Update the final CMD
-CMD ["/app/start_master.sh"]
+CMD ["sh", "-c", "ollama serve & /app/start_master.sh"]

@@ -19,6 +19,7 @@ services:
       - /mnt/user/appdata/NeuroPack/data:/app/NeuroPack/data
       - /mnt/user/appdata/ubuntu/ssh:/etc/ssh/keys
       - ../:/app/NeuroPack
+      - ~/.ollama:/root/.ollama
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
@@ -31,6 +32,7 @@ services:
       - "22:22"
       - "8765:8765"
       - "8080:8080"
+      - "11434:11434"
     stdin_open: true
     tty: true
 

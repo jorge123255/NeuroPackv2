@@ -1,0 +1,30 @@
+#!/bin/bash
+VENV_PATH="/home/gszulc/NeuroPack/Devices/venv/bin/activate"
+NEUROPACK_PATH="/home/gszulc/NeuroPack"
+
+# Check if Ollama is installed
+if ! command -v ollama &> /dev/null; then
+    echo "Installing Ollama..."
+    curl https://ollama.ai/install.sh | sh
+fi
+
+# Start Ollama if not running
+if ! pgrep -x "ollama" > /dev/null; then
+    echo "Starting Ollama..."
+    ollama serve &
+    sleep 2
+fi
+
+# Setup virtual environment
+if [ ! -f "$VENV_PATH" ]; then
+    echo "Creating virtual environment..."
+    python -m venv /home/gszulc/NeuroPack/Devices/venv
+    source "$VENV_PATH"
+    pip install -r "$NEUROPACK_PATH/Devices/laptop_requirements.txt"
+fi
+
+source "$VENV_PATH"
+export PYTHONPATH="$NEUROPACK_PATH:$PYTHONPATH"
+
+# Connect to master
+python laptop_node.py --master "$1" --name "$2"

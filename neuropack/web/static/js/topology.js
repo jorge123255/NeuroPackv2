@@ -673,314 +673,81 @@
         // CPU info
         statsGroup.append('text')
             .attr('text-anchor', 'middle')
-            .style('fill', COLORS.text.primary)
-            .style('font-size', '12px')
-            .text(`CPU: ${d.info.cpu_count} cores @ ${(d.info.cpu_freq/1000).toFixed(2)} GHz`);
+            .attr('dy', d => -d.nodeHeight / 2 + 60)
+            .text(d => `CPU: ${d.info.cpu_count} cores @ ${(d.info.cpu_freq / 1000).toFixed(2)} GHz`)
+            .style('fill', COLORS.text)
+            .style('font-size', '12px');
 
-        // Add memory bar
-        addMemoryBar(el, d, size);
+        node.append('text')
+            .attr('text-anchor', 'middle')
+            .attr('dy', d => -d.nodeHeight / 2 + 80)
+            .text(d => `RAM: ${formatBytes(d.info.available_memory)} / ${formatBytes(d.info.total_memory)}`)
+            .style('fill', COLORS.text)
+            .style('font-size', '12px');
 
-        // Add GPU information
-        if (d.info.gpu_info) {
+        // Add tooltips
+        node.on('mouseover', (event, d) => {
+            showTooltip(event, d);
+        }).on('mouseout', hideTooltip);
+    }
+
+    function drag(simulation) {
+        function dragstarted(event, d) {
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x;
+            d.fy = d.y;
+        }
+        
+        function dragged(event, d) {
+            d.fx = event.x;
+            d.fy = event.y;
+        }
+        
+        function dragended(event, d) {
+            if (!event.active) simulation.alphaTarget(0);
+            d.fx = null;
+            d.fy = null;
+        }
+        
+        return d3.drag()
+            .on('start', dragstarted)
+            .on('drag', dragged)
+            .on('end', dragended);
+    }
+
+    function showTooltip(event, d) {
+        const tooltip = d3.select('.tooltip');
+        let tooltipContent = `<strong>${d.id}</strong><br>
+                              Hostname: ${d.info.hostname}<br>
+                              Role: ${d.role}<br>
+                              CPU: ${d.info.cpu_count} cores @ ${(d.info.cpu_freq / 1000).toFixed(2)} GHz<br>
+                              RAM: ${formatBytes(d.info.available_memory)} / ${formatBytes(d.info.total_memory)}<br>`;
+        if (d.info.gpu_count > 0) {
+            tooltipContent += `<br><strong>GPU Information:</strong><br>`;
             d.info.gpu_info.forEach((gpu, i) => {
-                addGPUBars(el, d, size, gpu, i);
+                tooltipContent += `GPU ${i + 1}: ${gpu.name}<br>
+                                   Memory: ${formatBytes(gpu.current_memory)} / ${formatBytes(gpu.total_memory)}<br>`;
             });
         }
 
-        // Add new visualizations
-        addModelDistribution(el, d);
-        addMemoryAllocation(el, d);
-        addTaskQueue(el, d);
-        addPerformanceMetrics(el, d);
+        tooltip.style('display', 'block')
+            .style('left', (event.pageX + 15) + 'px')
+            .style('top', (event.pageY + 15) + 'px')
+            .html(tooltipContent);
     }
 
-    // Update the styles section with better hover handling
-    const styles = `
-        @keyframes pulse {
-            0% { opacity: 0.8; }
-            50% { opacity: 1; }
-            100% { opacity: 0.8; }
-        }
-
-        @keyframes connectionFlow {
-            0% { stroke-dashoffset: 24; }
-            100% { stroke-dashoffset: 0; }
-        }
-
-        .connection-line {
-            animation: connectionFlow 1s linear infinite;
-        }
-
-        .connection-glow {
-            animation: connectionFlow 1s linear infinite;
-        }
-
-        .node {
-            transition: filter 0.3s ease;
-        }
-
-        .node:hover .node-glow {
-            stroke-width: 3;
-            filter: url(#glow);
-        }
-
-        .node:hover .node-main {
-            filter: brightness(1.1);
-        }
-
-        .node-glow {
-            transition: stroke-width 0.3s ease, filter 0.3s ease;
-        }
-
-        .node-main {
-            transition: filter 0.3s ease;
-        }
-
-        .gpu-stats rect {
-            transition: all 0.3s ease;
-        }
-
-        .text-content {
-            pointer-events: none;
-            user-select: none;
-        }
-
-        .link-group {
-            pointer-events: none;
-        }
-
-        @keyframes flowParticle {
-            0% {
-                offset-distance: 0%;
-                opacity: 0;
-            }
-            10% {
-                opacity: 1;
-            }
-            90% {
-                opacity: 1;
-            }
-            100% {
-                offset-distance: 100%;
-                opacity: 0;
-            }
-        }
-
-        .flow-particle {
-            offset-path: path('M0,0 L100,0');
-            animation: flowParticle 2s infinite linear;
-        }
-
-        .node {
-            backdrop-filter: blur(5px);
-            -webkit-backdrop-filter: blur(5px);
-        }
-
-        .node-glow {
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        .node:hover .node-glow {
-            stroke-width: 4;
-            filter: url(#glow) brightness(1.2);
-        }
-
-        .gpu-bar {
-            transition: width 0.3s ease-out;
-        }
-
-        .connection-line {
-            stroke-linecap: round;
-            animation: dashFlow 30s linear infinite;
-        }
-
-        @keyframes dashFlow {
-            to {
-                stroke-dashoffset: -1000;
-            }
-        }
-
-        .stats-value {
-            font-family: 'Courier New', monospace;
-            font-weight: bold;
-        }
-
-        .gpu-label {
-            font-size: 12px;
-            fill: ${COLORS.text.primary};
-            font-weight: 500;
-        }
-
-        .gpu-stat {
-            font-size: 11px;
-            fill: ${COLORS.text.secondary};
-        }
-
-        .node-container {
-            transform-origin: center;
-            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        .node-container:hover {
-            transform: scale(1.02);
-        }
-    `;
-
-    // Add the styles to document
-    const styleSheet = document.createElement('style');
-    styleSheet.textContent = styles;
-    document.head.appendChild(styleSheet);
-
-    // Add model distribution visualization
-    function addModelDistribution(node, d) {
-        if (!d.info.loaded_models) return;
-
-        const modelGroup = node.append('g')
-            .attr('class', 'model-distribution');
-
-        // Model loading status
-        Object.entries(d.info.loaded_models).forEach(([modelName, info], i) => {
-            const y = -d.nodeHeight/2 + 160 + (i * 25);
-            
-            // Model name and layers
-            modelGroup.append('text')
-                .attr('class', 'model-info')
-                .attr('text-anchor', 'middle')
-                .attr('y', y)
-                .style('fill', COLORS.text.primary)
-                .style('font-size', '12px')
-                .text(`${modelName} (${info.layers || 'Loading...'})`);
-
-            // Loading progress bar
-            if (info.loading_progress) {
-                const barWidth = d.nodeWidth - 60;
-                const barGroup = modelGroup.append('g')
-                    .attr('transform', `translate(${-barWidth/2}, ${y + 5})`);
-
-                // Progress background
-                barGroup.append('rect')
-                    .attr('width', barWidth)
-                    .attr('height', 4)
-                    .attr('rx', 2)
-                    .style('fill', COLORS.gpu.idle);
-
-                // Progress bar
-                barGroup.append('rect')
-                    .attr('width', barWidth * (info.loading_progress / 100))
-                    .attr('height', 4)
-                    .attr('rx', 2)
-                    .style('fill', COLORS.master.border)
-                    .style('filter', 'url(#glow)');
-            }
-        });
+    function hideTooltip() {
+        d3.select('.tooltip').style('display', 'none');
     }
 
-    // Add memory allocation visualization
-    function addMemoryAllocation(node, d) {
-        if (!d.info.gpu_info) return;
+    // Initialize WebSocket connection
+    connectWebSocket();
 
-        const memGroup = node.append('g')
-            .attr('class', 'memory-allocation');
-
-        d.info.gpu_info.forEach((gpu, i) => {
-            const y = -d.nodeHeight/2 + 200 + (i * 60);
-            
-            // VRAM allocation breakdown
-            const allocations = [
-                { type: 'Model', value: gpu.model_memory || 0, color: COLORS.master.border },
-                { type: 'Cache', value: gpu.cache_memory || 0, color: COLORS.worker.border },
-                { type: 'Free', value: gpu.total_memory - (gpu.current_memory || 0), color: COLORS.gpu.idle }
-            ];
-
-            const barWidth = d.nodeWidth - 60;
-            const barHeight = 8;
-            const total = gpu.total_memory;
-
-            let cumulative = 0;
-            allocations.forEach(alloc => {
-                const width = (alloc.value / total) * barWidth;
-                
-                memGroup.append('rect')
-                    .attr('x', -barWidth/2 + cumulative)
-                    .attr('y', y)
-                    .attr('width', width)
-                    .attr('height', barHeight)
-                    .attr('rx', 2)
-                    .style('fill', alloc.color)
-                    .style('filter', 'url(#glow)');
-
-                cumulative += width;
-            });
-        });
-    }
-
-    // Add task queue visualization
-    function addTaskQueue(node, d) {
-        if (d.role !== 'master' || !d.info.task_queue) return;
-
-        const queueGroup = node.append('g')
-            .attr('class', 'task-queue')
-            .attr('transform', `translate(0, ${d.nodeHeight/2 - 40})`);
-
-        const tasks = d.info.task_queue.slice(0, 5); // Show last 5 tasks
-        const spacing = 15;
-
-        tasks.forEach((task, i) => {
-            queueGroup.append('circle')
-                .attr('cx', -30 + (i * spacing))
-                .attr('r', 4)
-                .style('fill', getTaskColor(task.type))
-                .style('filter', 'url(#glow)');
-        });
-
-        if (d.info.task_queue.length > 5) {
-            queueGroup.append('text')
-                .attr('x', -30 + (5 * spacing))
-                .attr('y', 4)
-                .style('fill', COLORS.text.secondary)
-                .style('font-size', '10px')
-                .text(`+${d.info.task_queue.length - 5}`);
-        }
-    }
-
-    // Add performance metrics
-    function addPerformanceMetrics(node, d) {
-        if (!d.metrics) return;
-
-        const metricsGroup = node.append('g')
-            .attr('class', 'performance-metrics')
-            .attr('transform', `translate(0, ${d.nodeHeight/2 - 70})`);
-
-        // Throughput indicator
-        if (d.metrics.throughput) {
-            metricsGroup.append('text')
-                .attr('class', 'metric')
-                .attr('text-anchor', 'middle')
-                .style('fill', COLORS.text.stats)
-                .style('font-size', '11px')
-                .text(`${d.metrics.throughput.toFixed(1)} tokens/s`);
-        }
-
-        // Latency indicator
-        if (d.metrics.latency) {
-            metricsGroup.append('text')
-                .attr('class', 'metric')
-                .attr('text-anchor', 'middle')
-                .attr('y', 20)
-                .style('fill', COLORS.text.stats)
-                .style('font-size', '11px')
-                .text(`${d.metrics.latency.toFixed(1)} ms/token`);
-        }
-    }
-
-    // Helper function for task colors
-    function getTaskColor(taskType) {
-        const taskColors = {
-            'inference': COLORS.master.border,
-            'loading': COLORS.worker.border,
-            'optimization': COLORS.gpu.usage.medium,
-            'default': COLORS.text.secondary
-        };
-        return taskColors[taskType] || taskColors.default;
+    // Helper function to format bytes
+    function formatBytes(bytes) {
+        const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+        if (bytes === 0) return '0 B';
+        const i = Math.floor(Math.log(bytes) / Math.log(1024));
+        return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + ' ' + sizes[i];
     }
 })();

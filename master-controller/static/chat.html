@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeuroPack Chat</title>
+    <style>
+        :root {
+            --primary-color: #2196F3;
+            --success-color: #4CAF50;
+            --error-color: #f44336;
+            --background-color: #1a1a1a;
+            --card-background: #2d2d2d;
+            --text-color: #ffffff;
+            --border-color: #404040;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .chat-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            max-width: 100%;
+            height: 100%;
+            box-sizing: border-box;
+        }
+        
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            margin-bottom: 20px;
+            background-color: var(--card-background);
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .message {
+            margin-bottom: 15px;
+            padding: 10px;
+            border-radius: 8px;
+            max-width: 80%;
+        }
+        
+        .message.user {
+            background-color: var(--primary-color);
+            margin-left: auto;
+        }
+        
+        .message.system {
+            background-color: var(--card-background);
+            border: 1px solid var(--border-color);
+            margin-right: auto;
+        }
+        
+        .input-container {
+            display: flex;
+            gap: 10px;
+            padding: 10px;
+            background-color: var(--card-background);
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .input-container textarea {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 4px;
+            background-color: rgba(255,255,255,0.1);
+            color: var(--text-color);
+            resize: none;
+            font-family: inherit;
+            font-size: 14px;
+            line-height: 1.4;
+            min-height: 40px;
+            max-height: 120px;
+        }
+        
+        .input-container textarea:focus {
+            outline: none;
+            background-color: rgba(255,255,255,0.15);
+        }
+        
+        .send-button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            background-color: var(--primary-color);
+            color: white;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            align-self: flex-end;
+        }
+        
+        .send-button:hover {
+            background-color: #1976D2;
+            transform: translateY(-1px);
+        }
+        
+        .send-button:disabled {
+            background-color: #666;
+            cursor: not-allowed;
+            transform: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="messages" id="messages"></div>
+        <div class="input-container">
+            <textarea 
+                id="messageInput" 
+                placeholder="Type your message..."
+                rows="1"
+                onkeydown="handleKeyDown(event)"></textarea>
+            <button class="send-button" onclick="sendMessage()" id="sendButton">Send</button>
+        </div>
+    </div>
+    
+    <script>
+        const messagesContainer = document.getElementById('messages');
+        const messageInput = document.getElementById('messageInput');
+        const sendButton = document.getElementById('sendButton');
+        let ws;
+        
+        function setupWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const hostname = window.location.hostname || '192.168.1.231';
+            const port = 8765;
+            const wsUrl = `${protocol}//${hostname}:${port}/chat`;
+            
+            ws = new WebSocket(wsUrl);
+            
+            ws.onopen = () => {
+                console.log('Connected to chat server');
+                sendButton.disabled = false;
+            };
+            
+            ws.onmessage = (event) => {
+                const message = JSON.parse(event.data);
+                addMessage(message.text, 'system');
+            };
+            
+            ws.onclose = () => {
+                console.log('Disconnected from chat server');
+                sendButton.disabled = true;
+                setTimeout(setupWebSocket, 3000);
+            };
+            
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                sendButton.disabled = true;
+            };
+        }
+        
+        function addMessage(text, type) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.textContent = text;
+            messagesContainer.appendChild(messageDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+        
+        function sendMessage() {
+            const text = messageInput.value.trim();
+            if (!text) return;
+            
+            const message = {
+                type: 'chat',
+                text: text
+            };
+            
+            try {
+                ws.send(JSON.stringify(message));
+                addMessage(text, 'user');
+                messageInput.value = '';
+                adjustTextareaHeight();
+            } catch (error) {
+                console.error('Error sending message:', error);
+            }
+        }
+        
+        function handleKeyDown(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+            adjustTextareaHeight();
+        }
+        
+        function adjustTextareaHeight() {
+            messageInput.style.height = 'auto';
+            messageInput.style.height = Math.min(messageInput.scrollHeight, 120) + 'px';
+        }
+        
+        // Initialize
+        setupWebSocket();
+        messageInput.focus();
+    </script>
+</body>
+</html>

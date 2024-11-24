@@ -1,0 +1,33 @@
+version: "3.8"
+
+services:
+  master:
+    build: 
+      context: ..
+      dockerfile: master-controller/Dockerfile
+    container_name: neuropack-master
+    networks:
+      br0:
+        ipv4_address: 192.168.1.231
+    volumes:
+      - ..:/app/NeuroPack
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - NODE_ROLE=master
+      - NODE_PORT=8765
+      - WEB_PORT=8080
+      - HOST=0.0.0.0
+    ports:
+      - "8765:8765"
+      - "8080:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    entrypoint: ["/bin/bash", "/app/NeuroPack/master-controller/start_master.sh"]
+
+networks:
+  br0:
+    external: true

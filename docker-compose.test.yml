@@ -1,0 +1,40 @@
+version: "3.8"
+
+services:
+  test:
+    build:
+      context: .
+      dockerfile: master-controller/Dockerfile
+    container_name: neuropack-test
+    environment:
+      - NODE_ROLE=test
+      - LOG_LEVEL=DEBUG
+      - PYTHONPATH=/app
+    volumes:
+      - .:/app
+    command: pytest -v tests/ --asyncio-mode=auto
+
+  master:
+    build:
+      context: .
+      dockerfile: master-controller/Dockerfile
+    container_name: neuropack-master-test
+    environment:
+      - NODE_ROLE=master
+      - LOG_LEVEL=DEBUG
+    ports:
+      - "8765:8765"
+      - "8080:8080"
+
+  worker:
+    build:
+      context: .
+      dockerfile: gpu-worker/Dockerfile
+    container_name: neuropack-worker-test
+    environment:
+      - NODE_ROLE=worker
+      - MASTER_HOST=master
+      - MASTER_PORT=8765
+      - LOG_LEVEL=DEBUG
+    depends_on:
+      - master

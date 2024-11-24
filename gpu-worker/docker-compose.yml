@@ -1,0 +1,41 @@
+services:
+  neuropack-node:
+    build:
+      context: ..
+      dockerfile: gpu-worker/Dockerfile
+    container_name: neuropack-node
+    runtime: nvidia
+    networks:
+      br0:
+        ipv4_address: 192.168.1.232
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, utility, compute]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - CUDA_VISIBLE_DEVICES=0,1
+      - MASTER_HOST=192.168.1.231
+      - MASTER_PORT=8765
+      - NODE_ID=neuropack-node
+      - NODE_PORT=8766
+      - NODE_ROLE=worker
+      - MAX_MEMORY_PERCENT=80
+      - LOG_LEVEL=INFO
+      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_ORIGINS=*
+    volumes:
+      - ..:/app/NeuroPack
+    ports:
+      - "8766:8766"
+      - "11434:11434"
+    restart: unless-stopped
+    entrypoint: ["/bin/bash", "/app/NeuroPack/gpu-worker/start.sh"]
+
+networks:
+  br0:
+    external: true

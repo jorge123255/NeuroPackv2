@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>NeuroPack LLM Cluster</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        :root {
+            --primary-color: #00ff44;
+            --secondary-color: #00ccff;
+            --bg-dark: #000000;
+            --bg-panel: rgba(0, 20, 0, 0.85);
+            --text-primary: #e0ffe0;
+            --glow-primary: rgba(0, 255, 68, 0.5);
+            --glow-secondary: rgba(0, 204, 255, 0.5);
+            --error-color: #ff3366;
+            --warning-color: #ffaa00;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Courier New', monospace;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background: var(--bg-dark);
+            color: var(--primary-color);
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #topology-container {
+            flex: 1;
+            width: 100%;
+            height: 100%;
+        }
+
+        .cluster-header {
+            padding: 20px;
+            text-align: center;
+            background: var(--bg-panel);
+            border-bottom: 1px solid var(--primary-color);
+            box-shadow: 0 0 20px var(--glow-primary);
+        }
+
+        .cluster-header pre {
+            color: var(--primary-color);
+            text-shadow: 0 0 10px var(--glow-primary);
+            margin-bottom: 10px;
+        }
+
+        .cluster-header .subtitle {
+            color: var(--secondary-color);
+            font-size: 1.2em;
+            text-shadow: 0 0 10px var(--glow-secondary);
+        }
+
+        .stats-panel {
+            position: fixed;
+            top: 100px;
+            right: 20px;
+            background: var(--bg-panel);
+            border: 1px solid var(--primary-color);
+            border-radius: 8px;
+            padding: 15px;
+            width: 300px;
+            box-shadow: 0 0 20px var(--glow-primary);
+        }
+
+        .stats-title {
+            color: var(--primary-color);
+            font-size: 1.2em;
+            margin-bottom: 10px;
+            text-shadow: 0 0 5px var(--glow-primary);
+        }
+
+        .resource-bar {
+            margin: 10px 0;
+        }
+
+        .resource-bar-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+        }
+
+        .resource-bar-bg {
+            height: 8px;
+            background: rgba(0, 255, 68, 0.1);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .resource-bar-fill {
+            height: 100%;
+            background: var(--primary-color);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+            box-shadow: 0 0 10px var(--glow-primary);
+        }
+
+        .connection-status {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: var(--bg-panel);
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: 1px solid var(--primary-color);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 0 20px var(--glow-primary);
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--error-color);
+            transition: background-color 0.3s ease;
+        }
+
+        .status-dot.connected {
+            background: var(--primary-color);
+            box-shadow: 0 0 10px var(--glow-primary);
+        }
+
+        .node-tooltip {
+            position: absolute;
+            display: none;
+            background: var(--bg-panel);
+            border: 1px solid var(--primary-color);
+            border-radius: 8px;
+            padding: 15px;
+            max-width: 300px;
+            pointer-events: none;
+            z-index: 1000;
+            box-shadow: 0 0 20px var(--glow-primary);
+        }
+
+        .node {
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .node:hover {
+            filter: brightness(1.2);
+        }
+
+        .link {
+            stroke-opacity: 0.6;
+            transition: all 0.3s ease;
+        }
+
+        .link:hover {
+            stroke-opacity: 1;
+            stroke-width: 2;
+        }
+
+        @keyframes pulse {
+            0% { stroke-opacity: 0.4; }
+            50% { stroke-opacity: 0.8; }
+            100% { stroke-opacity: 0.4; }
+        }
+
+        .active-link {
+            animation: pulse 2s infinite;
+        }
+
+        .chat-button {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: var(--bg-panel);
+            border: 1px solid var(--secondary-color);
+            border-radius: 8px;
+            padding: 12px 24px;
+            color: var(--secondary-color);
+            text-decoration: none;
+            font-size: 1.1em;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 20px var(--glow-secondary);
+            z-index: 1000;
+        }
+
+        .chat-button:hover {
+            background: rgba(0, 204, 255, 0.1);
+            transform: translateY(-2px);
+            box-shadow: 0 0 30px var(--glow-secondary);
+        }
+
+        .chat-button i {
+            font-size: 1.2em;
+        }
+
+        .stats-value {
+            color: var(--secondary-color);
+            font-weight: bold;
+            text-shadow: 0 0 5px var(--glow-secondary);
+        }
+    </style>
+</head>
+<body>
+    <div class="cluster-header">
+        <pre>
+    _   __                    ____             __  
+   / | / /___  __  ___________/ __ \____ ______/ /__
+  /  |/ / __ \/ / / / ___/ __/ /_/ / __ `/ ___/ //_/
+ / /|  / /_/ / /_/ / /  / /_/ ____/ /_/ / /__/ ,<   
+/_/ |_/\____/\__,_/_/   \__/_/    \__,_/\___/_/|_|  
+        </pre>
+        <div class="subtitle">Distributed AI Computing Platform</div>
+    </div>
+
+    <div id="topology-container">
+        <svg id="topology-svg"></svg>
+    </div>
+
+    <div class="stats-panel">
+        <div class="stats-title">Cluster Statistics</div>
+        <div id="cluster-stats">
+            <div class="resource-bar">
+                <div class="resource-bar-label">
+                    <span>Total CPU Usage</span>
+                    <span class="cpu-usage">0%</span>
+                </div>
+                <div class="resource-bar-bg">
+                    <div class="resource-bar-fill" style="width: 0%"></div>
+                </div>
+            </div>
+            <div class="resource-bar">
+                <div class="resource-bar-label">
+                    <span>Total Memory</span>
+                    <span class="memory-total"><span class="stats-value">0</span> GB</span>
+                </div>
+                <div class="resource-bar-label">
+                    <span>Memory Usage</span>
+                    <span class="memory-usage">0%</span>
+                </div>
+                <div class="resource-bar-bg">
+                    <div class="resource-bar-fill" style="width: 0%"></div>
+                </div>
+            </div>
+            <div class="resource-bar">
+                <div class="resource-bar-label">
+                    <span>Total GPU Memory</span>
+                    <span class="gpu-total"><span class="stats-value">0</span> GB</span>
+                </div>
+                <div class="resource-bar-label">
+                    <span>GPU Usage</span>
+                    <span class="gpu-usage">0%</span>
+                </div>
+                <div class="resource-bar-bg">
+                    <div class="resource-bar-fill" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <a href="/chat" class="chat-button">
+        <i>💬</i>
+        Open Chat Interface
+    </a>
+
+    <div class="connection-status">
+        <div class="status-dot"></div>
+        <span>Connecting...</span>
+    </div>
+
+    <div class="node-tooltip"></div>
+
+    <script src="/static/js/topology.js"></script>
+</body>
+</html>

@@ -1,21 +1,18 @@
-# NeuroPack: Distributed Computing for Large Language Models
+# NeuroPackv2
 
-NeuroPack is a distributed computing system designed to leverage heterogeneous computing resources (GPU and CPU nodes) for running Large Language Models (LLMs) across multiple devices.
+A distributed model management system for efficient handling of large language models across multiple nodes.
 
 ## Features
 
-- Distributed task processing across multiple laptop nodes
-- Dynamic resource allocation and load balancing
-- Memory-aware task distribution
-- Support for various task types:
-  - Tokenization
-  - Weight caching
-  - Preprocessing
-  - Postprocessing
-  - Memory storage
-- Real-time node status monitoring
-- Automatic node discovery and registration
-- Fault tolerance with task queue persistence
+- Distributed model management with automatic sharding
+- Fault tolerance and automatic failover
+- Load balancing and request routing
+- Comprehensive metrics and monitoring
+- Configuration management
+- Support for both Hugging Face and Ollama models
+
+## Version
+2.0.0 - Latest update with distributed system enhancements
 
 ## Architecture
 

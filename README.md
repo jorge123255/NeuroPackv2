@@ -200,6 +200,153 @@ docker-compose up -d --build
    - Verify Docker daemon: `sudo systemctl status docker`
    - Restart Docker: `sudo systemctl restart docker`
 
+## Non-Docker Worker Setup (Direct Installation)
+
+For devices that prefer not to use Docker or need direct installation, follow these steps:
+
+### Prerequisites for Direct Installation
+- Python 3.8+
+- pip
+- For GPU support:
+  - NVIDIA GPU
+  - NVIDIA drivers
+  - CUDA Toolkit 11.8+
+  - cuDNN (for certain models)
+
+### Installation Steps
+
+1. **Set up Python environment**:
+```bash
+# Create and activate virtual environment
+python -m venv neuropack-env
+source neuropack-env/bin/activate  # Linux/Mac
+# or
+.\neuropack-env\Scripts\activate  # Windows
+
+# Clone the repository
+git clone https://github.com/yourusername/NeuroPackv2.git
+cd NeuroPackv2
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+2. **Install GPU Support (if using GPU)**:
+```bash
+# Install PyTorch with CUDA support
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+
+# For Ollama support (optional)
+# Mac
+curl https://ollama.ai/install.sh | sh
+
+# Windows
+# Download from https://ollama.ai/download/windows
+```
+
+3. **Configure the Worker**:
+
+Create a `.env` file in the project root:
+```ini
+# Worker Configuration
+MASTER_HOST=192.168.1.231  # IP of your master controller
+MASTER_PORT=8765
+NODE_ID=laptop-worker-1    # Unique ID for this worker
+NODE_PORT=8766
+NODE_ROLE=worker
+MAX_MEMORY_PERCENT=80
+LOG_LEVEL=INFO
+
+# GPU Configuration (if using GPU)
+CUDA_VISIBLE_DEVICES=0     # Specify GPU indices to use
+```
+
+4. **Start the Worker**:
+```bash
+# Activate virtual environment if not already active
+source neuropack-env/bin/activate  # Linux/Mac
+# or
+.\neuropack-env\Scripts\activate   # Windows
+
+# Start the worker
+python -m neuropack.distributed.node
+```
+
+### Managing the Worker
+
+1. **Start/Stop**:
+```bash
+# Start worker (Linux/Mac)
+./scripts/start_worker.sh
+
+# Start worker (Windows)
+scripts\start_worker.bat
+
+# Stop worker
+# Press Ctrl+C in the terminal window
+```
+
+2. **View Logs**:
+```bash
+# Logs are written to ./logs/worker.log
+tail -f logs/worker.log  # Linux/Mac
+# or
+type logs\worker.log     # Windows
+```
+
+3. **Update Worker**:
+```bash
+# Pull latest changes
+git pull
+
+# Update dependencies
+pip install -r requirements.txt
+
+# Restart worker
+```
+
+### Troubleshooting Direct Installation
+
+1. **Python/Package Issues**:
+   - Verify Python version: `python --version`
+   - Update pip: `python -m pip install --upgrade pip`
+   - Clear pip cache: `pip cache purge`
+   - Install in verbose mode: `pip install -v -r requirements.txt`
+
+2. **GPU Issues**:
+   - Check NVIDIA driver: `nvidia-smi`
+   - Verify CUDA: `python -c "import torch; print(torch.cuda.is_available())"`
+   - Check GPU memory: `nvidia-smi -l 1`
+
+3. **Connection Issues**:
+   - Check network connectivity: `ping master-ip`
+   - Verify ports are open: `nc -zv master-ip 8765`
+   - Check firewall settings
+   - Ensure master controller is running
+
+4. **Common Errors**:
+   - "CUDA not available": Install NVIDIA drivers and CUDA toolkit
+   - "Connection refused": Check master controller IP and port
+   - "Memory error": Adjust MAX_MEMORY_PERCENT in .env file
+   - "Port in use": Change NODE_PORT in .env file
+
+### Performance Optimization
+
+1. **GPU Optimization**:
+   - Set CUDA_VISIBLE_DEVICES to control GPU usage
+   - Adjust MAX_MEMORY_PERCENT based on available GPU memory
+   - Monitor GPU temperature and utilization
+
+2. **CPU Optimization**:
+   - Set number of worker threads in config
+   - Monitor CPU usage and adjust batch sizes
+   - Consider process priority settings
+
+3. **Memory Management**:
+   - Monitor RAM usage
+   - Adjust model loading strategy
+   - Implement model unloading when idle
+
 ## Monitoring
 
 View logs:

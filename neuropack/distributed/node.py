@@ -65,7 +65,7 @@ class DeviceInfo:
         
         return cls(
             cpu_count=psutil.cpu_count(),
-            cpu_freq=psutil.cpu_freq().max,
+            cpu_freq=psutil.cpu_freq().max if psutil.cpu_freq() else 0.0,
             total_memory=psutil.virtual_memory().total,
             available_memory=psutil.virtual_memory().available,
             gpu_count=len(gpu_info),
@@ -73,7 +73,8 @@ class DeviceInfo:
             hostname=hostname,
             ip_address=ip,
             platform=platform.system(),
-            supported_models=supported_models
+            supported_models=supported_models,
+            loaded_models={}  # Initialize empty dict for loaded models
         )
 
     @staticmethod

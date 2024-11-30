@@ -52,86 +52,81 @@ class LaptopSetup:
             'platform': platform.system()
         }
 
-    def check_docker(self):
-        """Check if Docker is installed and running"""
+    def setup_virtual_env(self):
+        """Setup virtual environment and install dependencies"""
+        logger.info("Setting up Python virtual environment...")
         try:
-            subprocess.run(['docker', '--version'], check=True, capture_output=True)
-            subprocess.run(['docker', 'info'], check=True, capture_output=True)
-            logger.info("Docker is installed and running")
-            return True
-        except subprocess.CalledProcessError:
-            logger.error("Docker is not installed or not running")
-            return False
-        except FileNotFoundError:
-            logger.error("Docker is not installed")
-            return False
+            venv_path = self.base_dir / 'venv'
+            if not venv_path.exists():
+                subprocess.run([sys.executable, '-m', 'venv', str(venv_path)], check=True)
+                logger.info("Created virtual environment")
 
-    def create_docker_network(self):
-        """Create Docker bridge network if it doesn't exist"""
-        try:
-            # Check if network exists
-            result = subprocess.run(['docker', 'network', 'ls', '--format', '{{.Name}}'], 
-                                 capture_output=True, text=True)
-            if 'br0' not in result.stdout:
-                # Create network
-                subprocess.run(['docker', 'network', 'create', 
-                             '--driver', 'bridge',
-                             '--subnet', '192.168.1.0/24',
-                             'br0'], check=True)
-                logger.info("Created Docker network 'br0'")
+                # Install requirements
+                pip_path = venv_path / 'bin' / 'pip' if platform.system() != 'Windows' else venv_path / 'Scripts' / 'pip'
+                subprocess.run([str(pip_path), 'install', '-r', str(self.base_dir / 'requirements.txt')], check=True)
+                logger.info("Installed dependencies")
             else:
-                logger.info("Docker network 'br0' already exists")
+                logger.info("Virtual environment already exists")
+            return True
         except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to create Docker network: {e}")
-            raise
+            logger.error(f"Failed to setup virtual environment: {e}")
+            return False
 
     def setup_worker(self):
-        """Setup GPU worker node"""
-        worker_dir = self.base_dir / 'gpu-worker'
-        
-        # Create directories if they don't exist
-        worker_dir.mkdir(exist_ok=True)
-        (worker_dir / 'cache').mkdir(exist_ok=True)
-        
-        # Write configuration
-        config_path = worker_dir / 'config.json'
-        with open(config_path, 'w') as f:
-            json.dump(self.config, f, indent=4)
-        
-        logger.info("Starting GPU worker container...")
+        """Setup worker node configuration"""
+        logger.info("Setting up worker node...")
         try:
-            subprocess.run(['docker-compose', 'up', '-d'], 
-                         cwd=worker_dir, check=True)
-            logger.info("GPU worker container started successfully")
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to start GPU worker container: {e}")
-            raise
+            # Create necessary directories
+            worker_dir = self.base_dir / 'worker'
+            worker_dir.mkdir(exist_ok=True)
+            (worker_dir / 'cache').mkdir(exist_ok=True)
+            (worker_dir / 'logs').mkdir(exist_ok=True)
+            
+            # Create .env file
+            env_file = self.base_dir / '.env'
+            env_content = f"""
+# Worker Configuration
+MASTER_HOST={self.config['master_host']}
+MASTER_PORT={self.config['master_port']}
+NODE_ID=laptop-worker-1
+NODE_PORT=8766
+NODE_ROLE={self.config['node_role']}
+MAX_MEMORY_PERCENT={self.config['max_memory_percent']}
+LOG_LEVEL={self.config['log_level']}
+LOG_FILE=worker/logs/worker.log
+"""
+            with open(env_file, 'w') as f:
+                f.write(env_content.strip())
+            
+            logger.info("Created worker configuration")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to setup worker: {e}")
+            return False
 
     def run(self):
         """Run the setup process"""
         try:
-            # Check requirements
+            # Check system requirements
             sys_info = self.check_system_requirements()
             
-            # Check Docker
-            if not self.check_docker():
-                logger.error("Please install Docker and try again")
-                return False
+            # Setup virtual environment
+            if not self.setup_virtual_env():
+                raise Exception("Failed to setup virtual environment")
             
-            # Create network
-            self.create_docker_network()
-            
-            # Setup worker
-            self.setup_worker()
+            # Setup worker configuration
+            if not self.setup_worker():
+                raise Exception("Failed to setup worker")
             
             logger.info("Setup completed successfully!")
-            logger.info("\nTo view logs:")
-            logger.info("  docker logs neuropack-worker")
-            logger.info("\nTo stop the worker:")
-            logger.info("  cd gpu-worker && docker-compose down")
+            logger.info("\nTo start the worker, run:")
+            if platform.system() != 'Windows':
+                logger.info("source venv/bin/activate")
+            else:
+                logger.info(".\\venv\\Scripts\\activate")
+            logger.info("python -m neuropack.distributed.node")
             
             return True
-            
         except Exception as e:
             logger.error(f"Setup failed: {e}")
             return False
@@ -140,5 +135,4 @@ if __name__ == "__main__":
     setup = LaptopSetup()
     if setup.run():
         sys.exit(0)
-    else:
-        sys.exit(1)
+    sys.exit(1)

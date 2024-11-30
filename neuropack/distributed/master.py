@@ -4,9 +4,9 @@ import logging
 import multiprocessing
 from typing import Dict, Set, List, Optional
 import websockets
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field, fields
 from neuropack.web.server import TopologyServer
-from neuropack.distributed.node import Node, DeviceInfo
+from neuropack.distributed.node import Node
 import aiohttp
 
 logger = logging.getLogger(__name__)
@@ -21,6 +21,27 @@ class ModelInfo:
     current_requests: int = 0
     total_tokens: int = 0
     avg_latency: float = 0.0
+
+@dataclass
+class DeviceInfo:
+    cpu_count: int
+    cpu_freq: float
+    total_memory: int
+    available_memory: int
+    gpu_count: int
+    gpu_info: List[Dict]
+    hostname: str
+    ip_address: str
+    platform: str
+    loaded_models: Dict[str, Dict] = field(default_factory=dict)
+    supported_models: List[str] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: Dict) -> 'DeviceInfo':
+        # Remove any unexpected fields from the data
+        expected_fields = {f.name for f in fields(cls)}
+        filtered_data = {k: v for k, v in data.items() if k in expected_fields}
+        return cls(**filtered_data)
 
 class MasterNode(Node):
     def __init__(self, host="0.0.0.0", port=8765, web_port=8080):
@@ -121,7 +142,7 @@ class MasterNode(Node):
             
             if data.get('type') == 'register':
                 node_id = data['id']
-                device_info = DeviceInfo(**data['device_info'])
+                device_info = DeviceInfo.from_dict(data['device_info'])
                 
                 # Store connection and device info
                 self.connections[node_id] = websocket
@@ -269,7 +290,7 @@ class MasterNode(Node):
         try:
             # Update node info
             if 'device_info' in data:
-                self.nodes[node_id] = DeviceInfo(**data['device_info'])
+                self.nodes[node_id] = DeviceInfo.from_dict(data['device_info'])
             
             # Update performance metrics
             if 'metrics' in data:
@@ -458,7 +479,7 @@ def main():
     parser.add_argument('--host', type=str, default='0.0.0.0')
     args = parser.parse_args()
 
-    master = MasterNode(port=args.port, web_port=args.web_port)
+    master = MasterNode(port=args.port, web_port=args.web_port, host=args.host)
     
     # Start both services
     import asyncio

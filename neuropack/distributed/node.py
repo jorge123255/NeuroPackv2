@@ -240,15 +240,20 @@ class Node:
     async def _handle_message(self, message):
         """Handle incoming message from master"""
         try:
+            logger.debug(f"Received message of type: {type(message)}")
+            logger.debug(f"Message content: {message}")
+            
             # Handle both string and dict messages
             if isinstance(message, str):
                 try:
                     data = json.loads(message)
+                    logger.debug("Successfully parsed JSON string")
                 except json.JSONDecodeError as e:
                     logger.error(f"Invalid JSON message: {message}")
                     logger.error(f"JSON decode error: {e}")
                     return
             elif isinstance(message, dict):
+                logger.debug("Message is already a dict, using as is")
                 data = message
             else:
                 logger.error(f"Received invalid message type: {type(message)}")
@@ -259,7 +264,7 @@ class Node:
                 logger.error(f"Message missing 'type' field: {data}")
                 return
                 
-            logger.debug(f"Received message type: {msg_type}")
+            logger.debug(f"Processing message type: {msg_type}")
             
             if msg_type == 'load_model':
                 model_name = data.get('model_name')
@@ -282,6 +287,7 @@ class Node:
         except Exception as e:
             logger.error(f"Error handling message: {e}")
             logger.error(f"Message was: {message}")
+            logger.error("Stack trace:", exc_info=True)
             error_msg = {
                 'type': 'error',
                 'id': self.id,
@@ -296,6 +302,9 @@ class Node:
                 logger.warning("Not connected to master, cannot send message")
                 return
                 
+            logger.debug(f"Sending message of type: {type(message)}")
+            logger.debug(f"Message content: {message}")
+            
             if isinstance(message, str):
                 await self.websocket.send(message)
             else:
@@ -319,6 +328,8 @@ class Node:
             device_info_dict = {k: v for k, v in device_info_dict.items() 
                               if k in valid_fields}
             
+            logger.debug(f"Sending status update with device info: {device_info_dict}")
+            
             status = {
                 'type': 'status_update',
                 'id': self.id,
@@ -328,6 +339,7 @@ class Node:
         except Exception as e:
             logger.error(f"Error sending status update: {e}")
             logger.error(f"Device info was: {device_info_dict}")
+            logger.error("Stack trace:", exc_info=True)
 
     async def _periodic_status_update(self):
         """Periodically send status updates to master"""

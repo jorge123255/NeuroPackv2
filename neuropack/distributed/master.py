@@ -150,6 +150,9 @@ class MasterNode(Node):
         node_id = None
         try:
             async for message in websocket:
+                logger.debug(f"Received raw message type: {type(message)}")
+                logger.debug(f"Raw message content: {message}")
+                
                 if node_id is None:
                     # First message should be registration
                     try:
@@ -171,10 +174,11 @@ class MasterNode(Node):
                         self.connections[node_id] = websocket
                         
                         # Handle registration message
-                        await self.handle_node_message(node_id, data)
+                        await self.handle_node_message(node_id, message)
                         
                     except Exception as e:
                         logger.error(f"Error processing registration: {e}")
+                        logger.error(f"Registration message was: {message}")
                         return
                 else:
                     # Handle subsequent messages
@@ -191,6 +195,93 @@ class MasterNode(Node):
                 if node_id in self.nodes:
                     del self.nodes[node_id]
                 await self.broadcast_topology()
+
+    async def handle_node_message(self, node_id: str, message):
+        """Handle incoming messages from nodes"""
+        try:
+            logger.debug(f"Handling message of type {type(message)} from node {node_id}")
+            
+            # Handle both string and dict messages
+            if isinstance(message, str):
+                try:
+                    data = json.loads(message)
+                    logger.debug("Successfully parsed JSON string")
+                except json.JSONDecodeError as e:
+                    logger.error(f"Invalid JSON message from {node_id}: {message}")
+                    logger.error(f"JSON decode error: {e}")
+                    return
+            elif isinstance(message, dict):
+                logger.debug("Message is already a dict, using as is")
+                data = message
+            else:
+                logger.error(f"Received invalid message type from {node_id}: {type(message)}")
+                return
+
+            msg_type = data.get('type')
+            if not msg_type:
+                logger.error(f"Message from {node_id} missing 'type' field: {data}")
+                return
+
+            logger.debug(f"Processing message type {msg_type} from {node_id}")
+            
+            if msg_type == 'register':
+                # Handle registration message
+                device_info = data.get('device_info', {})
+                if not isinstance(device_info, dict):
+                    logger.error(f"Invalid device_info format from {node_id}: {device_info}")
+                    return
+                    
+                # Filter device info to only include valid fields
+                valid_fields = {f.name for f in fields(DeviceInfo)}
+                device_info = {k: v for k, v in device_info.items() 
+                             if k in valid_fields}
+                
+                try:
+                    device_info_obj = DeviceInfo.from_dict(device_info)
+                    self.nodes[node_id] = device_info_obj
+                    logger.info(f"Node {node_id} registered with {device_info_obj.gpu_count} GPUs")
+                    await self.broadcast_topology()
+                except Exception as e:
+                    logger.error(f"Error registering node {node_id}: {e}")
+                    logger.error(f"Device info was: {device_info}")
+                    
+            elif msg_type == 'status_update':
+                if node_id not in self.nodes:
+                    logger.warning(f"Status update from unregistered node: {node_id}")
+                    return
+                    
+                device_info = data.get('device_info', {})
+                if not isinstance(device_info, dict):
+                    logger.error(f"Invalid device_info in status update from {node_id}: {device_info}")
+                    return
+                    
+                # Filter and update device info
+                valid_fields = {f.name for f in fields(DeviceInfo)}
+                device_info = {k: v for k, v in device_info.items() 
+                             if k in valid_fields}
+                
+                try:
+                    self.nodes[node_id].update_device_info(device_info)
+                    logger.debug(f"Updated device info for node {node_id}")
+                except Exception as e:
+                    logger.error(f"Error updating device info for {node_id}: {e}")
+                    logger.error(f"Device info was: {device_info}")
+                    
+            elif msg_type == 'heartbeat_response':
+                if node_id in self.nodes:
+                    self.nodes[node_id].last_heartbeat = time.time()
+                    logger.debug(f"Updated heartbeat for node {node_id}")
+                else:
+                    logger.warning(f"Heartbeat from unregistered node: {node_id}")
+                    
+            elif msg_type == 'error':
+                error_msg = data.get('error', 'Unknown error')
+                logger.error(f"Error from node {node_id}: {error_msg}")
+                
+        except Exception as e:
+            logger.error(f"Error handling node message: {e}")
+            logger.error(f"Message was: {message}")
+            logger.error("Stack trace:", exc_info=True)
 
     async def _send_message(self, websocket, message):
         """Send a message to a node"""
@@ -217,86 +308,6 @@ class MasterNode(Node):
                     logger.warning(f"Removing node {node_id} due to connection error")
                     del self.nodes[node_id]
                     break
-
-    async def handle_node_message(self, node_id: str, message):
-        """Handle incoming messages from nodes"""
-        try:
-            # Handle both string and dict messages
-            if isinstance(message, str):
-                try:
-                    data = json.loads(message)
-                except json.JSONDecodeError as e:
-                    logger.error(f"Invalid JSON message from {node_id}: {message}")
-                    logger.error(f"JSON decode error: {e}")
-                    return
-            elif isinstance(message, dict):
-                data = message
-            else:
-                logger.error(f"Received invalid message type from {node_id}: {type(message)}")
-                return
-
-            msg_type = data.get('type')
-            if not msg_type:
-                logger.error(f"Message from {node_id} missing 'type' field: {data}")
-                return
-
-            logger.debug(f"Received message type {msg_type} from {node_id}")
-            
-            if msg_type == 'register':
-                # Handle registration message
-                device_info = data.get('device_info', {})
-                if not isinstance(device_info, dict):
-                    logger.error(f"Invalid device_info format from {node_id}: {device_info}")
-                    return
-                    
-                # Filter device info to only include valid fields
-                valid_fields = {f.name for f in fields(DeviceInfo)}
-                device_info = {k: v for k, v in device_info.items() 
-                             if k in valid_fields}
-                
-                try:
-                    device_info_obj = DeviceInfo.from_dict(device_info)
-                    self.nodes[node_id] = device_info_obj
-                    logger.info(f"Node {node_id} registered with {device_info_obj.gpu_count} GPUs")
-                    await self.broadcast_topology()
-                except Exception as e:
-                    logger.error(f"Error registering node {node_id}: {e}")
-                    
-            elif msg_type == 'status_update':
-                if node_id not in self.nodes:
-                    logger.warning(f"Status update from unregistered node: {node_id}")
-                    return
-                    
-                device_info = data.get('device_info', {})
-                if not isinstance(device_info, dict):
-                    logger.error(f"Invalid device_info in status update from {node_id}: {device_info}")
-                    return
-                    
-                # Filter and update device info
-                valid_fields = {f.name for f in fields(DeviceInfo)}
-                device_info = {k: v for k, v in device_info.items() 
-                             if k in valid_fields}
-                
-                try:
-                    self.nodes[node_id].update_device_info(device_info)
-                    logger.debug(f"Updated device info for node {node_id}")
-                except Exception as e:
-                    logger.error(f"Error updating device info for {node_id}: {e}")
-                    
-            elif msg_type == 'heartbeat_response':
-                if node_id in self.nodes:
-                    self.nodes[node_id].last_heartbeat = time.time()
-                    logger.debug(f"Updated heartbeat for node {node_id}")
-                else:
-                    logger.warning(f"Heartbeat from unregistered node: {node_id}")
-                    
-            elif msg_type == 'error':
-                error_msg = data.get('error', 'Unknown error')
-                logger.error(f"Error from node {node_id}: {error_msg}")
-                
-        except Exception as e:
-            logger.error(f"Error handling node message: {e}")
-            logger.error(f"Message was: {message}")
 
     async def _check_nodes(self):
         """Periodically check node status and send heartbeats"""

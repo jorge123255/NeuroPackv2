@@ -248,6 +248,9 @@ class Node:
                 except Exception as e:
                     logger.error(f"Failed to convert dict to JSON: {e}")
                     return
+            elif not isinstance(message, str):
+                logger.error(f"Received invalid message type: {type(message)}")
+                return
                     
             try:
                 data = json.loads(message)
@@ -278,6 +281,7 @@ class Node:
                 
         except Exception as e:
             logger.error(f"Error handling message: {e}")
+            logger.error(f"Message was: {message}")
             error_msg = {
                 'type': 'error',
                 'id': self.id,
@@ -285,7 +289,7 @@ class Node:
             }
             await self._send_message(error_msg)
 
-    async def _send_message(self, message: dict):
+    async def _send_message(self, message):
         """Send a message to the master"""
         try:
             if not self.websocket or not self.connected:
@@ -300,6 +304,7 @@ class Node:
                     await self.websocket.send(json_message)
                 except Exception as e:
                     logger.error(f"Failed to send message: {e}")
+                    logger.error(f"Message was: {message}")
                     
         except Exception as e:
             logger.error(f"Error sending message: {e}")
@@ -322,6 +327,7 @@ class Node:
             await self._send_message(status)
         except Exception as e:
             logger.error(f"Error sending status update: {e}")
+            logger.error(f"Device info was: {device_info_dict}")
 
     async def _periodic_status_update(self):
         """Periodically send status updates to master"""

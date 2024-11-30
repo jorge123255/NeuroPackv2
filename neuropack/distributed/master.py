@@ -9,6 +9,7 @@ from neuropack.web.server import TopologyServer
 from neuropack.distributed.node import Node
 import aiohttp
 import uuid
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,8 @@ class DeviceInfo:
     platform: str
     loaded_models: Dict[str, Dict] = field(default_factory=dict)
     supported_models: List[str] = field(default_factory=list)
+    last_heartbeat: float = 0.0
+    websocket: websockets.WebSocketServerProtocol = None
 
     @classmethod
     def from_dict(cls, data: Dict) -> 'DeviceInfo':
@@ -43,6 +46,11 @@ class DeviceInfo:
         expected_fields = {f.name for f in fields(cls)}
         filtered_data = {k: v for k, v in data.items() if k in expected_fields}
         return cls(**filtered_data)
+
+    def update_device_info(self, device_info: Dict):
+        for key, value in device_info.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
 
 class MasterNode(Node):
     def __init__(self, host="0.0.0.0", port=8765, web_port=8080):
@@ -64,6 +72,8 @@ class MasterNode(Node):
         self.model_registry: Dict[str, Dict[str, ModelInfo]] = {}
         self.task_queue = asyncio.Queue()
         self.performance_metrics = {}
+        self.heartbeat_timeout = 30  # seconds
+        self.heartbeat_interval = 10  # seconds
 
     async def start(self):
         """Start the master node and web interface"""
@@ -80,6 +90,7 @@ class MasterNode(Node):
         self.metrics_task = asyncio.create_task(self._collect_metrics())
         self.model_monitor = asyncio.create_task(self._monitor_models())
         self.model_loader = asyncio.create_task(self._process_model_queue())
+        self.node_check_task = asyncio.create_task(self._check_nodes())
         
         try:
             await asyncio.gather(
@@ -153,6 +164,7 @@ class MasterNode(Node):
                     # Store connection and device info
                     self.connections[node_id] = websocket
                     self.nodes[node_id] = device_info
+                    self.nodes[node_id].websocket = websocket
                     
                     logger.info(f"Node {node_id} registered with {device_info.gpu_count} GPUs")
                     await self.broadcast_topology()
@@ -160,7 +172,7 @@ class MasterNode(Node):
                     # Handle subsequent messages
                     while True:
                         message = await websocket.recv()
-                        await self.handle_message(node_id, message)
+                        await self._handle_message(websocket, message)
                         
         except websockets.exceptions.ConnectionClosed:
             logger.info(f"Node {node_id} disconnected")
@@ -173,69 +185,123 @@ class MasterNode(Node):
                 del self.nodes[node_id]
             await self.broadcast_topology()
 
-    async def handle_message(self, node_id: str, message: str):
-        """Handle incoming messages from nodes"""
+    async def _handle_message(self, websocket, message):
+        """Handle incoming message from node"""
         try:
             # Ensure message is a string before parsing
             if isinstance(message, dict):
-                logger.warning(f"Received dict instead of string from {node_id}, converting to JSON")
+                logger.warning("Received dict instead of string, converting to JSON")
                 try:
                     message = json.dumps(message)
                 except Exception as e:
                     logger.error(f"Failed to convert dict to JSON: {e}")
                     return
-            
+            elif not isinstance(message, str):
+                logger.error(f"Received invalid message type: {type(message)}")
+                return
+                    
             try:
                 data = json.loads(message)
             except json.JSONDecodeError:
-                logger.error(f"Invalid JSON message from {node_id}: {message}")
+                logger.error(f"Invalid JSON message: {message}")
                 return
-                
+                    
             msg_type = data.get('type')
-            logger.debug(f"Received message type {msg_type} from {node_id}")
+            node_id = data.get('id')
+            logger.debug(f"Received message type: {msg_type} from node: {node_id}")
             
-            if msg_type == 'status_update':
-                if 'device_info' in data:
-                    device_info = data['device_info']
-                    if isinstance(device_info, dict):
-                        # Remove any fields not in DeviceInfo
-                        valid_fields = {f.name for f in fields(DeviceInfo)}
-                        device_info = {k: v for k, v in device_info.items() 
-                                     if k in valid_fields}
-                        try:
-                            self.nodes[node_id] = DeviceInfo.from_dict(device_info)
-                            await self.broadcast_topology()
-                        except Exception as e:
-                            logger.error(f"Error updating device info for {node_id}: {e}")
-                            
-            elif msg_type == 'model_update':
-                await self._handle_model_update(node_id, data)
-            elif msg_type == 'task_complete':
-                await self._handle_task_complete(node_id, data)
-            elif msg_type == 'resource_request':
-                await self._handle_resource_request(node_id, data)
+            if msg_type == 'register':
+                # Filter device info to only include valid fields
+                device_info = data.get('device_info', {})
+                valid_fields = {f.name for f in fields(DeviceInfo)}
+                device_info = {k: v for k, v in device_info.items() 
+                             if k in valid_fields}
+                
+                await self._register_node(websocket, node_id, device_info)
+                
+            elif msg_type == 'status_update':
+                device_info = data.get('device_info', {})
+                valid_fields = {f.name for f in fields(DeviceInfo)}
+                device_info = {k: v for k, v in device_info.items() 
+                             if k in valid_fields}
+                
+                if node_id in self.nodes:
+                    self.nodes[node_id].update_device_info(device_info)
+                    logger.debug(f"Updated device info for node {node_id}")
+                else:
+                    logger.warning(f"Received status update from unregistered node: {node_id}")
+                    
+            elif msg_type == 'heartbeat_response':
+                if node_id in self.nodes:
+                    self.nodes[node_id].last_heartbeat = time.time()
+                    logger.debug(f"Updated heartbeat for node {node_id}")
+                else:
+                    logger.warning(f"Received heartbeat from unregistered node: {node_id}")
+                    
             elif msg_type == 'error':
-                await self._handle_error(node_id, data)
-            elif msg_type == 'heartbeat':
-                # Send heartbeat response
-                response = {
-                    'type': 'heartbeat_response',
-                    'id': node_id
-                }
-                await self._send_message(node_id, response)
+                error_msg = data.get('error', 'Unknown error')
+                logger.error(f"Error from node {node_id}: {error_msg}")
                 
         except Exception as e:
-            logger.error(f"Error handling message from {node_id}: {e}")
+            logger.error(f"Error handling message: {e}")
+            logger.error(f"Message was: {message}")
 
-    async def _send_message(self, node_id: str, message: dict):
+    async def _send_message(self, websocket, message):
         """Send a message to a node"""
         try:
-            if node_id in self.connections:
-                await self.connections[node_id].send(json.dumps(message))
+            if isinstance(message, str):
+                await websocket.send(message)
             else:
-                logger.warning(f"Node {node_id} not connected, cannot send message")
+                try:
+                    json_message = json.dumps(message)
+                    await websocket.send(json_message)
+                except Exception as e:
+                    logger.error(f"Failed to send message: {e}")
+                    logger.error(f"Message was: {message}")
+                    
         except Exception as e:
-            logger.error(f"Error sending message to {node_id}: {e}")
+            logger.error(f"Error sending message: {e}")
+            # Remove node if we can't send messages to it
+            for node_id, node in list(self.nodes.items()):
+                if node.websocket == websocket:
+                    logger.warning(f"Removing node {node_id} due to connection error")
+                    del self.nodes[node_id]
+                    break
+
+    async def _register_node(self, websocket, node_id, device_info):
+        """Register a new node"""
+        self.nodes[node_id] = DeviceInfo.from_dict(device_info)
+        self.nodes[node_id].websocket = websocket
+        self.nodes[node_id].last_heartbeat = time.time()
+        logger.info(f"Node {node_id} registered")
+        await self.broadcast_topology()
+
+    async def _check_nodes(self):
+        """Periodically check node status and send heartbeats"""
+        while True:
+            try:
+                current_time = time.time()
+                for node_id, node in list(self.nodes.items()):
+                    # Remove nodes that haven't responded to heartbeat
+                    if current_time - node.last_heartbeat > self.heartbeat_timeout:
+                        logger.warning(f"Node {node_id} timed out, removing")
+                        del self.nodes[node_id]
+                        continue
+                        
+                    # Send heartbeat to active nodes
+                    try:
+                        message = {
+                            'type': 'heartbeat',
+                            'id': 'master'
+                        }
+                        await self._send_message(node.websocket, message)
+                    except Exception as e:
+                        logger.error(f"Failed to send heartbeat to node {node_id}: {e}")
+                        
+            except Exception as e:
+                logger.error(f"Error in node check loop: {e}")
+                
+            await asyncio.sleep(self.heartbeat_interval)
 
     async def broadcast_topology(self):
         """Broadcast current topology to web interface"""
@@ -248,7 +314,7 @@ class MasterNode(Node):
                     'role': 'master' if node_id == self.id else 'worker',
                     'metrics': self.performance_metrics.get(node_id, {}),
                     'models': self.model_registry.get(node_id, {}),
-                    'status': 'active' if node_id in self.connections else 'disconnected'
+                    'status': 'active' if info.websocket in self.connections else 'disconnected'
                 }
                 nodes_info.append(node_data)
                 

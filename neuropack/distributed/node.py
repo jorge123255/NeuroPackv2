@@ -49,34 +49,28 @@ class DeviceInfo:
         ip = socket.gethostbyname(hostname)
         
         gpu_info = []
-        if torch.cuda.is_available():
-            for i in range(torch.cuda.device_count()):
-                gpu_info.append({
-                    'name': torch.cuda.get_device_name(i),
-                    'total_memory': torch.cuda.get_device_properties(i).total_memory,
-                    'compute_capability': torch.cuda.get_device_capability(i),
-                    'current_memory': torch.cuda.memory_allocated(i),
-                    'max_memory': torch.cuda.max_memory_allocated(i)
-                })
+        gpu_count = torch.cuda.device_count()
         
-        # Scan for available models
-        supported_models = []
-        ollama_models = cls._scan_ollama_models()
-        hf_models = cls._scan_huggingface_models()
-        supported_models.extend(ollama_models + hf_models)
+        if gpu_count > 0:
+            for i in range(gpu_count):
+                gpu = torch.cuda.get_device_properties(i)
+                gpu_info.append({
+                    'name': gpu.name,
+                    'total_memory': gpu.total_memory,
+                    'major': gpu.major,
+                    'minor': gpu.minor
+                })
         
         return cls(
             cpu_count=psutil.cpu_count(),
-            cpu_freq=psutil.cpu_freq().max if psutil.cpu_freq() else 0.0,
+            cpu_freq=psutil.cpu_freq().current if psutil.cpu_freq() else 0.0,
             total_memory=psutil.virtual_memory().total,
             available_memory=psutil.virtual_memory().available,
-            gpu_count=len(gpu_info),
+            gpu_count=gpu_count,
             gpu_info=gpu_info,
             hostname=hostname,
             ip_address=ip,
-            platform=platform.system(),
-            supported_models=supported_models,
-            loaded_models={}  # Initialize empty dict for loaded models
+            platform=platform.system()
         )
 
     @staticmethod
@@ -184,10 +178,10 @@ class Node:
             
     async def _register_with_master(self, websocket):
         """Register this node with the master."""
+        device_info = self.device_info
         register_msg = {
             'type': 'register',
-            'id': self.id,
-            'device_info': asdict(self.device_info)
+            'device_info': asdict(device_info)
         }
         await websocket.send(json.dumps(register_msg))
         logger.info(f"Registered with master as node {self.id}")

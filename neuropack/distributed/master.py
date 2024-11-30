@@ -8,6 +8,7 @@ from dataclasses import asdict, dataclass, field, fields
 from neuropack.web.server import TopologyServer
 from neuropack.distributed.node import Node
 import aiohttp
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -135,42 +136,36 @@ class MasterNode(Node):
 
     async def handle_connection(self, websocket: websockets.WebSocketServerProtocol):
         """Handle incoming WebSocket connections"""
-        node_id = None
+        node_id = str(uuid.uuid4())  # Generate ID for the node
         try:
             message = await websocket.recv()
             data = json.loads(message)
             
             if data.get('type') == 'register':
-                node_id = data['id']
                 device_info = DeviceInfo.from_dict(data['device_info'])
                 
                 # Store connection and device info
                 self.connections[node_id] = websocket
                 self.nodes[node_id] = device_info
                 
-                logger.info(f"Node {node_id} connected")
+                logger.info(f"Node {node_id} registered with {device_info.gpu_count} GPUs")
                 await self.broadcast_topology()
                 
-                try:
-                    async for message in websocket:
-                        await self.handle_message(node_id, message)
-                except websockets.ConnectionClosed:
-                    logger.info(f"Node {node_id} disconnected")
-                finally:
-                    if node_id in self.connections:
-                        del self.connections[node_id]
-                    if node_id in self.nodes:
-                        del self.nodes[node_id]
-                    await self.broadcast_topology()
+                # Handle subsequent messages
+                while True:
+                    message = await websocket.recv()
+                    await self.handle_message(node_id, message)
                     
+        except websockets.exceptions.ConnectionClosed:
+            logger.info(f"Node {node_id} disconnected")
         except Exception as e:
             logger.error(f"Error handling connection: {e}", exc_info=True)
-            if node_id:
-                if node_id in self.connections:
-                    del self.connections[node_id]
-                if node_id in self.nodes:
-                    del self.nodes[node_id]
-                await self.broadcast_topology()
+        finally:
+            if node_id in self.connections:
+                del self.connections[node_id]
+            if node_id in self.nodes:
+                del self.nodes[node_id]
+            await self.broadcast_topology()
 
     async def handle_message(self, node_id: str, message: str):
         """Handle incoming messages from nodes"""

@@ -38,7 +38,7 @@ class DeviceInfo:
     hostname: str
     ip_address: str
     platform: str
-    loaded_models: Dict[str, ModelInfo] = field(default_factory=dict)
+    loaded_models: Dict[str, Dict] = field(default_factory=dict)
     supported_models: List[str] = field(default_factory=list)
     
     @classmethod
@@ -157,7 +157,7 @@ class Node:
             
             # Update model registry
             model_info = self._get_model_info(model_name)
-            self.device_info.loaded_models[model_name] = model_info
+            self.device_info.loaded_models[model_name] = asdict(model_info)
             await self._notify_master_model_update()
             
         except Exception as e:
@@ -192,7 +192,7 @@ class Node:
                 'type': 'model_update',
                 'node_id': self.id,
                 'models': {
-                    name: asdict(info) 
+                    name: info 
                     for name, info in self.device_info.loaded_models.items()
                 }
             }

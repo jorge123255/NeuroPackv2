@@ -170,7 +170,12 @@ class MasterNode(Node):
     async def handle_message(self, node_id: str, message: str):
         """Handle incoming messages from nodes"""
         try:
-            data = json.loads(message)
+            # Ensure message is a string before parsing
+            if isinstance(message, dict):
+                data = message
+            else:
+                data = json.loads(message)
+                
             msg_type = data.get('type')
             
             if msg_type == 'status_update':
@@ -183,6 +188,13 @@ class MasterNode(Node):
                 await self._handle_resource_request(node_id, data)
             elif msg_type == 'error':
                 await self._handle_error(node_id, data)
+            elif msg_type == 'heartbeat':
+                # Send heartbeat response
+                response = json.dumps({
+                    'type': 'heartbeat_response',
+                    'id': node_id
+                })
+                await self.connections[node_id].send(response)
                 
         except Exception as e:
             logger.error(f"Error handling message from {node_id}: {e}")

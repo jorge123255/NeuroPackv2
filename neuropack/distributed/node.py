@@ -172,7 +172,7 @@ class Node:
                     # Main message loop
                     while True:
                         message = await websocket.recv()
-                        await self._handle_message(websocket, message)
+                        await self._handle_message(message)
                         
             except websockets.exceptions.ConnectionClosed:
                 logger.error("Connection to master closed, retrying in 5 seconds...")
@@ -191,23 +191,48 @@ class Node:
         await websocket.send(json.dumps(register_msg))
         logger.info(f"Registered with master as node {self.id}")
         
-    async def _handle_message(self, websocket, message):
-        """Handle incoming messages from master."""
+    async def _handle_message(self, message):
+        """Handle incoming message from master"""
         try:
-            data = json.loads(message)
+            # Ensure message is a string before parsing
+            if isinstance(message, dict):
+                data = message
+            else:
+                data = json.loads(message)
+            
             msg_type = data.get('type')
             
             if msg_type == 'load_model':
-                await self._handle_load_model(data)
-            elif msg_type == 'unload_model':
-                await self._handle_unload_model(data)
-            else:
-                logger.warning(f"Unknown message type: {msg_type}")
+                model_name = data.get('model_name')
+                await self.load_model(model_name)
                 
-        except json.JSONDecodeError:
-            logger.error("Failed to decode message")
+            elif msg_type == 'unload_model':
+                model_name = data.get('model_name')
+                await self.unload_model(model_name)
+                
+            elif msg_type == 'heartbeat':
+                response = json.dumps({
+                    'type': 'heartbeat_response',
+                    'id': self.id
+                })
+                await self.websocket.send(response)
+                
+            elif msg_type == 'status_request':
+                status = {
+                    'type': 'status_update',
+                    'id': self.id,
+                    'device_info': asdict(self.device_info)
+                }
+                await self.websocket.send(json.dumps(status))
+                
         except Exception as e:
-            logger.error(f"Error handling message: {e}", exc_info=True)
+            logger.error(f"Error handling message: {e}")
+            error_msg = {
+                'type': 'error',
+                'id': self.id,
+                'error': str(e)
+            }
+            await self.websocket.send(json.dumps(error_msg))
             
     def _print_status(self):
         """Print current node status."""

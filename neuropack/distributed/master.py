@@ -156,22 +156,22 @@ class MasterNode(Node):
                 if node_id is None:
                     # First message should be registration
                     try:
-                        if isinstance(message, str):
-                            data = json.loads(message)
-                        else:
+                        # Ensure message is properly JSON encoded
+                        if isinstance(message, dict):
                             data = message
+                        else:
+                            data = json.loads(message)
                             
                         if data.get('type') != 'register':
                             logger.error("First message must be registration")
                             return
                             
-                        node_id = data.get('id')
-                        if not node_id:
-                            logger.error("Registration missing node id")
-                            return
-                            
-                        # Store connection
+                        node_id = str(uuid.uuid4()) if not data.get('id') else data.get('id')
                         self.connections[node_id] = websocket
+                        
+                        # Convert message to JSON string if it's a dict
+                        if isinstance(message, dict):
+                            message = json.dumps(message)
                         
                         # Handle registration message
                         await self.handle_node_message(node_id, message)
@@ -181,14 +181,15 @@ class MasterNode(Node):
                         logger.error(f"Registration message was: {message}")
                         return
                 else:
-                    # Handle subsequent messages
+                    # Convert dict messages to JSON strings before handling
+                    if isinstance(message, dict):
+                        message = json.dumps(message)
                     await self.handle_node_message(node_id, message)
                         
         except websockets.exceptions.ConnectionClosed:
             logger.info(f"Node {node_id} disconnected")
             
         finally:
-            # Clean up connection
             if node_id:
                 if node_id in self.connections:
                     del self.connections[node_id]

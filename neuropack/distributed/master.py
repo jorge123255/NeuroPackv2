@@ -192,10 +192,36 @@ class MasterNode(Node):
                     del self.nodes[node_id]
                 await self.broadcast_topology()
 
+    async def _send_message(self, websocket, message):
+        """Send a message to a node"""
+        try:
+            if not websocket:
+                logger.warning("No websocket connection available")
+                return
+                
+            if isinstance(message, str):
+                await websocket.send(message)
+            else:
+                try:
+                    json_message = json.dumps(message)
+                    await websocket.send(json_message)
+                except Exception as e:
+                    logger.error(f"Failed to send message: {e}")
+                    logger.error(f"Message was: {message}")
+                    
+        except Exception as e:
+            logger.error(f"Error sending message: {e}")
+            # Remove node if we can't send messages to it
+            for node_id, node in list(self.nodes.items()):
+                if node.websocket == websocket:
+                    logger.warning(f"Removing node {node_id} due to connection error")
+                    del self.nodes[node_id]
+                    break
+
     async def handle_node_message(self, node_id: str, message):
         """Handle incoming messages from nodes"""
         try:
-            data = message
+            # Handle both string and dict messages
             if isinstance(message, str):
                 try:
                     data = json.loads(message)
@@ -203,7 +229,9 @@ class MasterNode(Node):
                     logger.error(f"Invalid JSON message from {node_id}: {message}")
                     logger.error(f"JSON decode error: {e}")
                     return
-            elif not isinstance(message, dict):
+            elif isinstance(message, dict):
+                data = message
+            else:
                 logger.error(f"Received invalid message type from {node_id}: {type(message)}")
                 return
 

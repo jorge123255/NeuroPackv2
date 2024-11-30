@@ -240,25 +240,25 @@ class Node:
     async def _handle_message(self, message):
         """Handle incoming message from master"""
         try:
-            # Ensure message is a string before parsing
-            if isinstance(message, dict):
-                logger.warning("Received dict instead of string, converting to JSON")
+            # Handle both string and dict messages
+            if isinstance(message, str):
                 try:
-                    message = json.dumps(message)
-                except Exception as e:
-                    logger.error(f"Failed to convert dict to JSON: {e}")
+                    data = json.loads(message)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Invalid JSON message: {message}")
+                    logger.error(f"JSON decode error: {e}")
                     return
-            elif not isinstance(message, str):
+            elif isinstance(message, dict):
+                data = message
+            else:
                 logger.error(f"Received invalid message type: {type(message)}")
                 return
                     
-            try:
-                data = json.loads(message)
-            except json.JSONDecodeError:
-                logger.error(f"Invalid JSON message: {message}")
-                return
-                    
             msg_type = data.get('type')
+            if not msg_type:
+                logger.error(f"Message missing 'type' field: {data}")
+                return
+                
             logger.debug(f"Received message type: {msg_type}")
             
             if msg_type == 'load_model':

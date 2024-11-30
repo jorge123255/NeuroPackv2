@@ -131,21 +131,22 @@ class Node:
     async def start(self):
         """Start the node and connect to master."""
         try:
-            async with asyncio.TaskGroup() as tg:
-                # Start the command interface
-                tg.create_task(self._start_command_interface())
-                # Connect to master
-                tg.create_task(self._connect_to_master())
-        except* Exception as e:
-            for exc in e.exceptions:
-                logger.error(f"Detailed error: {exc}", exc_info=True)
+            # Create tasks for command interface and master connection
+            command_task = asyncio.create_task(self._start_command_interface())
+            master_task = asyncio.create_task(self._connect_to_master())
+            
+            # Wait for both tasks
+            await asyncio.gather(command_task, master_task)
+            
+        except Exception as e:
+            logger.error(f"Error starting node: {e}", exc_info=True)
             raise
             
     async def _start_command_interface(self):
         """Start the command line interface."""
-        while True:
-            try:
-                command = await ainput("> ")
+        try:
+            while True:
+                command = input("> ")
                 if command == "quit":
                     logger.info("Shutting down...")
                     sys.exit(0)
@@ -153,29 +154,33 @@ class Node:
                     self._print_status()
                 else:
                     logger.warning(f"Unknown command: {command}")
-            except Exception as e:
-                logger.error(f"Error in command interface: {e}", exc_info=True)
+        except Exception as e:
+            logger.error(f"Error in command interface: {e}", exc_info=True)
+            raise
 
     async def _connect_to_master(self):
         """Connect to master node."""
-        try:
-            uri = f"ws://{self.master_host}:{self.master_port}"
-            logger.info(f"Connecting to master at {uri}")
-            
-            async with websockets.connect(uri) as websocket:
-                # Register with master
-                await self._register_with_master(websocket)
+        while True:
+            try:
+                uri = f"ws://{self.master_host}:{self.master_port}"
+                logger.info(f"Connecting to master at {uri}")
                 
-                # Main message loop
-                while True:
-                    message = await websocket.recv()
-                    await self._handle_message(websocket, message)
+                async with websockets.connect(uri) as websocket:
+                    # Register with master
+                    await self._register_with_master(websocket)
                     
-        except websockets.exceptions.ConnectionClosed:
-            logger.error("Connection to master closed")
-        except Exception as e:
-            logger.error(f"Error connecting to master: {e}", exc_info=True)
-            
+                    # Main message loop
+                    while True:
+                        message = await websocket.recv()
+                        await self._handle_message(websocket, message)
+                        
+            except websockets.exceptions.ConnectionClosed:
+                logger.error("Connection to master closed, retrying in 5 seconds...")
+                await asyncio.sleep(5)
+            except Exception as e:
+                logger.error(f"Error connecting to master: {e}", exc_info=True)
+                await asyncio.sleep(5)
+                
     async def _register_with_master(self, websocket):
         """Register this node with the master."""
         device_info = self.device_info
@@ -280,3 +285,38 @@ class Node:
     async def _handle_unload_model(self, data):
         # Implementation depends on the unload model logic
         pass
+
+async def main():
+    """Main entry point for the node."""
+    import argparse
+    parser = argparse.ArgumentParser(description='Start a NeuroPack node')
+    parser.add_argument('master_ip', help='IP address of the master node')
+    parser.add_argument('--port', type=int, default=8765, help='Port of the master node')
+    args = parser.parse_args()
+
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+
+    # Print system info
+    logger.info("\n=== System Information ===")
+    logger.info(f"Platform: {platform.system()} {platform.release()}")
+    logger.info(f"CPU: {platform.machine()}")
+    logger.info(f"Cores: {psutil.cpu_count()}")
+    logger.info(f"CPU Frequency: {psutil.cpu_freq().current/1000:.2f} GHz")
+    logger.info("=======================\n")
+
+    # Create and start node
+    node = Node(master_host=args.master_ip, master_port=args.port)
+    try:
+        await node.start()
+    except KeyboardInterrupt:
+        logger.info("Shutting down...")
+    except Exception as e:
+        logger.error(f"Error running node: {e}", exc_info=True)
+        sys.exit(1)
+
+if __name__ == "__main__":
+    asyncio.run(main())

@@ -142,20 +142,26 @@ class MasterNode(Node):
             data = json.loads(message)
             
             if data.get('type') == 'register':
-                device_info = DeviceInfo.from_dict(data['device_info'])
-                
-                # Store connection and device info
-                self.connections[node_id] = websocket
-                self.nodes[node_id] = device_info
-                
-                logger.info(f"Node {node_id} registered with {device_info.gpu_count} GPUs")
-                await self.broadcast_topology()
-                
-                # Handle subsequent messages
-                while True:
-                    message = await websocket.recv()
-                    await self.handle_message(node_id, message)
+                # Clean device info before creating DeviceInfo object
+                device_info_data = data['device_info']
+                if isinstance(device_info_data, dict):
+                    # Remove role and any other unexpected fields
+                    device_info_data = {k: v for k, v in device_info_data.items() 
+                                     if k in {f.name for f in fields(DeviceInfo)}}
+                    device_info = DeviceInfo.from_dict(device_info_data)
                     
+                    # Store connection and device info
+                    self.connections[node_id] = websocket
+                    self.nodes[node_id] = device_info
+                    
+                    logger.info(f"Node {node_id} registered with {device_info.gpu_count} GPUs")
+                    await self.broadcast_topology()
+                    
+                    # Handle subsequent messages
+                    while True:
+                        message = await websocket.recv()
+                        await self.handle_message(node_id, message)
+                        
         except websockets.exceptions.ConnectionClosed:
             logger.info(f"Node {node_id} disconnected")
         except Exception as e:

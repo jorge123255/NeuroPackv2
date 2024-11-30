@@ -5,7 +5,7 @@ import torch
 import platform
 import socket
 import json
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, asdict, field, fields
 from typing import Dict, Optional, List
 import asyncio
 import logging
@@ -190,14 +190,14 @@ class Node:
                 
                 # Register with master
                 device_info_dict = asdict(self.device_info)
-                if 'role' in device_info_dict:
-                    del device_info_dict['role']  # Remove role if present
-                    
+                device_info_dict = {k: v for k, v in device_info_dict.items() 
+                                  if k in {f.name for f in fields(DeviceInfo)}}
+                
                 register_msg = {
                     'type': 'register',
                     'device_info': device_info_dict
                 }
-                await websocket.send(json.dumps(register_msg))
+                await self._send_message(register_msg)
                 logger.info("Connected to master")
                 
                 # Main message loop

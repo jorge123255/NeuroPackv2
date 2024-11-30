@@ -240,9 +240,14 @@ class Node:
             if isinstance(message, dict):
                 data = message
             else:
-                data = json.loads(message)
-            
+                try:
+                    data = json.loads(message)
+                except json.JSONDecodeError:
+                    logger.error(f"Invalid JSON message: {message}")
+                    return
+                    
             msg_type = data.get('type')
+            logger.debug(f"Received message type: {msg_type}")
             
             if msg_type == 'load_model':
                 model_name = data.get('model_name')
@@ -253,19 +258,24 @@ class Node:
                 await self.unload_model(model_name)
                 
             elif msg_type == 'heartbeat':
-                response = json.dumps({
+                response = {
                     'type': 'heartbeat_response',
                     'id': self.id
-                })
-                await self.websocket.send(response)
+                }
+                await self._send_message(response)
                 
             elif msg_type == 'status_request':
+                # Remove role from device info if present
+                device_info_dict = asdict(self.device_info)
+                if 'role' in device_info_dict:
+                    del device_info_dict['role']
+                    
                 status = {
                     'type': 'status_update',
                     'id': self.id,
-                    'device_info': asdict(self.device_info)
+                    'device_info': device_info_dict
                 }
-                await self.websocket.send(json.dumps(status))
+                await self._send_message(status)
                 
         except Exception as e:
             logger.error(f"Error handling message: {e}")
@@ -274,8 +284,18 @@ class Node:
                 'id': self.id,
                 'error': str(e)
             }
-            await self.websocket.send(json.dumps(error_msg))
-            
+            await self._send_message(error_msg)
+
+    async def _send_message(self, message: dict):
+        """Send a message to the master"""
+        try:
+            if self.websocket and self.connected:
+                await self.websocket.send(json.dumps(message))
+            else:
+                logger.warning("Not connected to master, cannot send message")
+        except Exception as e:
+            logger.error(f"Error sending message: {e}")
+
     def _print_status(self):
         """Print current node status."""
         print("\n=== Node Status ===")
@@ -338,7 +358,7 @@ class Node:
                     for name, info in self.device_info.loaded_models.items()
                 }
             }
-            await self.websocket.send(json.dumps(update))
+            await self._send_message(update)
 
     async def _handle_load_model(self, data):
         # Implementation depends on the load model logic

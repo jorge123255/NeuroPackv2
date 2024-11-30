@@ -174,9 +174,14 @@ class MasterNode(Node):
             if isinstance(message, dict):
                 data = message
             else:
-                data = json.loads(message)
+                try:
+                    data = json.loads(message)
+                except json.JSONDecodeError:
+                    logger.error(f"Invalid JSON message from {node_id}: {message}")
+                    return
                 
             msg_type = data.get('type')
+            logger.debug(f"Received message type {msg_type} from {node_id}")
             
             if msg_type == 'status_update':
                 await self._handle_status_update(node_id, data)
@@ -190,14 +195,39 @@ class MasterNode(Node):
                 await self._handle_error(node_id, data)
             elif msg_type == 'heartbeat':
                 # Send heartbeat response
-                response = json.dumps({
+                response = {
                     'type': 'heartbeat_response',
                     'id': node_id
-                })
-                await self.connections[node_id].send(response)
+                }
+                await self.connections[node_id].send(json.dumps(response))
                 
         except Exception as e:
             logger.error(f"Error handling message from {node_id}: {e}")
+
+    async def _handle_status_update(self, node_id: str, data: dict):
+        """Handle status update from node"""
+        try:
+            if 'device_info' in data:
+                device_info = data['device_info']
+                if isinstance(device_info, dict):
+                    # Remove role if present
+                    if 'role' in device_info:
+                        del device_info['role']
+                    self.nodes[node_id] = DeviceInfo.from_dict(device_info)
+                    logger.info(f"Updated status for node {node_id}")
+                    await self.broadcast_topology()
+        except Exception as e:
+            logger.error(f"Error handling status update from {node_id}: {e}")
+
+    async def _send_message(self, node_id: str, message: dict):
+        """Send a message to a node"""
+        try:
+            if node_id in self.connections:
+                await self.connections[node_id].send(json.dumps(message))
+            else:
+                logger.warning(f"Node {node_id} not connected, cannot send message")
+        except Exception as e:
+            logger.error(f"Error sending message to {node_id}: {e}")
 
     async def broadcast_topology(self):
         """Broadcast current topology to web interface"""
@@ -284,23 +314,6 @@ class MasterNode(Node):
                 })
         
         return metrics
-
-    async def _handle_status_update(self, node_id: str, data: dict):
-        """Handle status update from node"""
-        try:
-            # Update node info
-            if 'device_info' in data:
-                self.nodes[node_id] = DeviceInfo.from_dict(data['device_info'])
-            
-            # Update performance metrics
-            if 'metrics' in data:
-                self.performance_metrics[node_id] = data['metrics']
-            
-            # Broadcast updated topology
-            await self.broadcast_topology()
-            
-        except Exception as e:
-            logger.error(f"Error handling status update from {node_id}: {e}")
 
     async def _handle_model_update(self, node_id: str, data: dict):
         """Handle model update from node"""

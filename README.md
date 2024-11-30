@@ -200,6 +200,27 @@ docker-compose up -d --build
    - Verify Docker daemon: `sudo systemctl status docker`
    - Restart Docker: `sudo systemctl restart docker`
 
+## Setup Instructions
+
+### For Laptop/Worker Nodes
+1. Run the laptop setup script:
+```bash
+python Devices/setup_laptop.py
+```
+
+2. Start the worker node:
+```bash
+./run_node.sh MASTER_IP
+```
+Replace MASTER_IP with your master node's IP address.
+
+### For Development/Package Installation
+If you want to install the package for development:
+```bash
+pip install -e .
+```
+This will use setup.py to install the package in development mode.
+
 ## Non-Docker Worker Setup (Direct Installation)
 
 For devices that prefer not to use Docker or need direct installation, follow these steps:

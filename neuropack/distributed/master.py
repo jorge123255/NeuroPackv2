@@ -199,19 +199,15 @@ class MasterNode(Node):
     async def handle_node_message(self, node_id: str, message):
         """Handle incoming messages from nodes"""
         try:
-            logger.debug(f"Handling message of type {type(message)} from node {node_id}")
-            
             # Handle both string and dict messages
             if isinstance(message, str):
                 try:
                     data = json.loads(message)
-                    logger.debug("Successfully parsed JSON string")
                 except json.JSONDecodeError as e:
                     logger.error(f"Invalid JSON message from {node_id}: {message}")
                     logger.error(f"JSON decode error: {e}")
                     return
             elif isinstance(message, dict):
-                logger.debug("Message is already a dict, using as is")
                 data = message
             else:
                 logger.error(f"Received invalid message type from {node_id}: {type(message)}")
@@ -243,7 +239,6 @@ class MasterNode(Node):
                     await self.broadcast_topology()
                 except Exception as e:
                     logger.error(f"Error registering node {node_id}: {e}")
-                    logger.error(f"Device info was: {device_info}")
                     
             elif msg_type == 'status_update':
                 if node_id not in self.nodes:
@@ -265,7 +260,6 @@ class MasterNode(Node):
                     logger.debug(f"Updated device info for node {node_id}")
                 except Exception as e:
                     logger.error(f"Error updating device info for {node_id}: {e}")
-                    logger.error(f"Device info was: {device_info}")
                     
             elif msg_type == 'heartbeat_response':
                 if node_id in self.nodes:
@@ -281,60 +275,6 @@ class MasterNode(Node):
         except Exception as e:
             logger.error(f"Error handling node message: {e}")
             logger.error(f"Message was: {message}")
-            logger.error("Stack trace:", exc_info=True)
-
-    async def _send_message(self, websocket, message):
-        """Send a message to a node"""
-        try:
-            if not websocket:
-                logger.warning("No websocket connection available")
-                return
-                
-            if isinstance(message, str):
-                await websocket.send(message)
-            else:
-                try:
-                    json_message = json.dumps(message)
-                    await websocket.send(json_message)
-                except Exception as e:
-                    logger.error(f"Failed to send message: {e}")
-                    logger.error(f"Message was: {message}")
-                    
-        except Exception as e:
-            logger.error(f"Error sending message: {e}")
-            # Remove node if we can't send messages to it
-            for node_id, node in list(self.nodes.items()):
-                if node.websocket == websocket:
-                    logger.warning(f"Removing node {node_id} due to connection error")
-                    del self.nodes[node_id]
-                    break
-
-    async def _check_nodes(self):
-        """Periodically check node status and send heartbeats"""
-        while True:
-            try:
-                current_time = time.time()
-                for node_id, node in list(self.nodes.items()):
-                    # Remove nodes that haven't responded to heartbeat
-                    if current_time - node.last_heartbeat > self.heartbeat_timeout:
-                        logger.warning(f"Node {node_id} timed out, removing")
-                        del self.nodes[node_id]
-                        continue
-                        
-                    # Send heartbeat to active nodes
-                    try:
-                        message = {
-                            'type': 'heartbeat',
-                            'id': 'master'
-                        }
-                        await self._send_message(node.websocket, message)
-                    except Exception as e:
-                        logger.error(f"Failed to send heartbeat to node {node_id}: {e}")
-                        
-            except Exception as e:
-                logger.error(f"Error in node check loop: {e}")
-                
-            await asyncio.sleep(self.heartbeat_interval)
 
     async def broadcast_topology(self):
         """Broadcast current topology to web interface"""

@@ -151,7 +151,7 @@ class Node:
                     logger.info("Shutting down...")
                     sys.exit(0)
                 elif command == "status":
-                    self._print_status()
+                    self.show_status()
                 else:
                     logger.warning(f"Unknown command: {command}")
         except Exception as e:
@@ -240,20 +240,15 @@ class Node:
     async def _handle_message(self, message):
         """Handle incoming message from master"""
         try:
-            logger.debug(f"Received message of type: {type(message)}")
-            logger.debug(f"Message content: {message}")
-            
             # Handle both string and dict messages
             if isinstance(message, str):
                 try:
                     data = json.loads(message)
-                    logger.debug("Successfully parsed JSON string")
                 except json.JSONDecodeError as e:
                     logger.error(f"Invalid JSON message: {message}")
                     logger.error(f"JSON decode error: {e}")
                     return
             elif isinstance(message, dict):
-                logger.debug("Message is already a dict, using as is")
                 data = message
             else:
                 logger.error(f"Received invalid message type: {type(message)}")
@@ -287,7 +282,6 @@ class Node:
         except Exception as e:
             logger.error(f"Error handling message: {e}")
             logger.error(f"Message was: {message}")
-            logger.error("Stack trace:", exc_info=True)
             error_msg = {
                 'type': 'error',
                 'id': self.id,
@@ -303,17 +297,19 @@ class Node:
                 return
                 
             logger.debug(f"Sending message of type: {type(message)}")
-            logger.debug(f"Message content: {message}")
             
             if isinstance(message, str):
                 await self.websocket.send(message)
             else:
                 try:
+                    # Convert to JSON string
                     json_message = json.dumps(message)
+                    logger.debug(f"Sending JSON message: {json_message}")
                     await self.websocket.send(json_message)
                 except Exception as e:
                     logger.error(f"Failed to send message: {e}")
                     logger.error(f"Message was: {message}")
+                    return
                     
         except Exception as e:
             logger.error(f"Error sending message: {e}")
@@ -328,18 +324,19 @@ class Node:
             device_info_dict = {k: v for k, v in device_info_dict.items() 
                               if k in valid_fields}
             
-            logger.debug(f"Sending status update with device info: {device_info_dict}")
-            
             status = {
                 'type': 'status_update',
                 'id': self.id,
                 'device_info': device_info_dict
             }
-            await self._send_message(status)
+            
+            # Convert to JSON string before sending
+            json_message = json.dumps(status)
+            await self.websocket.send(json_message)
+            
         except Exception as e:
             logger.error(f"Error sending status update: {e}")
             logger.error(f"Device info was: {device_info_dict}")
-            logger.error("Stack trace:", exc_info=True)
 
     async def _periodic_status_update(self):
         """Periodically send status updates to master"""
@@ -350,13 +347,37 @@ class Node:
                 logger.error(f"Error in periodic status update: {e}")
             await asyncio.sleep(5)  # Update every 5 seconds
 
-    def _print_status(self):
-        """Print current node status."""
-        print("\n=== Node Status ===")
-        print(f"Node ID: {self.id}")
-        print(f"Connected to: {self.master_uri}")
-        print(f"Loaded Models: {list(self.device_info.loaded_models.keys())}")
-        print("=================\n")
+    def show_status(self):
+        """Show current node status"""
+        try:
+            status = {
+                'Node ID': self.id,
+                'Connected': self.connected,
+                'Master': f"{self.master_host}:{self.master_port}",
+                'Device Info': {
+                    'CPU Count': self.device_info.cpu_count,
+                    'Memory Total': f"{self.device_info.total_memory/1024/1024/1024:.2f} GB",
+                    'Memory Available': f"{self.device_info.available_memory/1024/1024/1024:.2f} GB",
+                    'GPU Count': self.device_info.gpu_count,
+                    'Platform': self.device_info.platform,
+                    'Loaded Models': list(self.device_info.loaded_models.keys()),
+                    'Supported Models': self.device_info.supported_models
+                }
+            }
+            
+            print("\nNode Status:")
+            print("-" * 50)
+            print(f"Node ID: {status['Node ID']}")
+            print(f"Connected: {status['Connected']}")
+            print(f"Master: {status['Master']}")
+            print("\nDevice Info:")
+            print("-" * 50)
+            for key, value in status['Device Info'].items():
+                print(f"{key}: {value}")
+                
+        except Exception as e:
+            logger.error(f"Error showing status: {e}")
+            print("Error getting node status")
 
     async def start_master(self):
         """Start master node operations"""

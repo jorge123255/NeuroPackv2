@@ -190,7 +190,19 @@ class MasterNode(Node):
             logger.debug(f"Received message type {msg_type} from {node_id}")
             
             if msg_type == 'status_update':
-                await self._handle_status_update(node_id, data)
+                if 'device_info' in data:
+                    device_info = data['device_info']
+                    if isinstance(device_info, dict):
+                        # Remove any fields not in DeviceInfo
+                        valid_fields = {f.name for f in fields(DeviceInfo)}
+                        device_info = {k: v for k, v in device_info.items() 
+                                     if k in valid_fields}
+                        try:
+                            self.nodes[node_id] = DeviceInfo.from_dict(device_info)
+                            await self.broadcast_topology()
+                        except Exception as e:
+                            logger.error(f"Error updating device info for {node_id}: {e}")
+                            
             elif msg_type == 'model_update':
                 await self._handle_model_update(node_id, data)
             elif msg_type == 'task_complete':
@@ -205,25 +217,10 @@ class MasterNode(Node):
                     'type': 'heartbeat_response',
                     'id': node_id
                 }
-                await self.connections[node_id].send(json.dumps(response))
+                await self._send_message(node_id, response)
                 
         except Exception as e:
             logger.error(f"Error handling message from {node_id}: {e}")
-
-    async def _handle_status_update(self, node_id: str, data: dict):
-        """Handle status update from node"""
-        try:
-            if 'device_info' in data:
-                device_info = data['device_info']
-                if isinstance(device_info, dict):
-                    # Remove role if present
-                    if 'role' in device_info:
-                        del device_info['role']
-                    self.nodes[node_id] = DeviceInfo.from_dict(device_info)
-                    logger.info(f"Updated status for node {node_id}")
-                    await self.broadcast_topology()
-        except Exception as e:
-            logger.error(f"Error handling status update from {node_id}: {e}")
 
     async def _send_message(self, node_id: str, message: dict):
         """Send a message to a node"""

@@ -190,8 +190,9 @@ class Node:
                 
                 # Register with master
                 device_info_dict = asdict(self.device_info)
+                valid_fields = {f.name for f in fields(DeviceInfo)}
                 device_info_dict = {k: v for k, v in device_info_dict.items() 
-                                  if k in {f.name for f in fields(DeviceInfo)}}
+                                  if k in valid_fields}
                 
                 register_msg = {
                     'type': 'register',
@@ -199,6 +200,9 @@ class Node:
                 }
                 await self._send_message(register_msg)
                 logger.info("Connected to master")
+                
+                # Start periodic status updates
+                asyncio.create_task(self._periodic_status_update())
                 
                 # Main message loop
                 while True:
@@ -295,6 +299,33 @@ class Node:
                 logger.warning("Not connected to master, cannot send message")
         except Exception as e:
             logger.error(f"Error sending message: {e}")
+
+    async def _send_status_update(self):
+        """Send status update to master"""
+        try:
+            # Get current device info and remove any invalid fields
+            device_info_dict = asdict(self.device_info)
+            valid_fields = {f.name for f in fields(DeviceInfo)}
+            device_info_dict = {k: v for k, v in device_info_dict.items() 
+                              if k in valid_fields}
+            
+            status = {
+                'type': 'status_update',
+                'id': self.id,
+                'device_info': device_info_dict
+            }
+            await self._send_message(status)
+        except Exception as e:
+            logger.error(f"Error sending status update: {e}")
+
+    async def _periodic_status_update(self):
+        """Periodically send status updates to master"""
+        while self.connected:
+            try:
+                await self._send_status_update()
+            except Exception as e:
+                logger.error(f"Error in periodic status update: {e}")
+            await asyncio.sleep(5)  # Update every 5 seconds
 
     def _print_status(self):
         """Print current node status."""

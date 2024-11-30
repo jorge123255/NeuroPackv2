@@ -39,7 +39,7 @@ class DeviceInfo:
     hostname: str
     ip_address: str
     platform: str
-    loaded_models: Dict[str, ModelInfo] = field(default_factory=dict)
+    loaded_models: Dict[str, Dict] = field(default_factory=dict)
     supported_models: List[str] = field(default_factory=list)
     
     @classmethod
@@ -48,35 +48,30 @@ class DeviceInfo:
         ip = socket.gethostbyname(hostname)
         
         gpu_info = []
-        if torch.cuda.is_available():
-            for i in range(torch.cuda.device_count()):
-                gpu_info.append({
-                    'name': torch.cuda.get_device_name(i),
-                    'total_memory': torch.cuda.get_device_properties(i).total_memory,
-                    'compute_capability': torch.cuda.get_device_capability(i),
-                    'current_memory': torch.cuda.memory_allocated(i),
-                    'max_memory': torch.cuda.max_memory_allocated(i)
-                })
+        gpu_count = torch.cuda.device_count()
         
-        # Scan for available models
-        supported_models = []
-        ollama_models = cls._scan_ollama_models()
-        hf_models = cls._scan_huggingface_models()
-        supported_models.extend(ollama_models + hf_models)
+        if gpu_count > 0:
+            for i in range(gpu_count):
+                gpu = torch.cuda.get_device_properties(i)
+                gpu_info.append({
+                    'name': gpu.name,
+                    'total_memory': gpu.total_memory,
+                    'major': gpu.major,
+                    'minor': gpu.minor
+                })
         
         return cls(
             cpu_count=psutil.cpu_count(),
-            cpu_freq=psutil.cpu_freq().max,
+            cpu_freq=psutil.cpu_freq().current if psutil.cpu_freq() else 0.0,
             total_memory=psutil.virtual_memory().total,
             available_memory=psutil.virtual_memory().available,
-            gpu_count=len(gpu_info),
+            gpu_count=gpu_count,
             gpu_info=gpu_info,
             hostname=hostname,
             ip_address=ip,
-            platform=platform.system(),
-            supported_models=supported_models
+            platform=platform.system()
         )
-
+    
     @staticmethod
     def _scan_ollama_models() -> List[str]:
         """Scan for locally available Ollama models"""
@@ -161,44 +156,36 @@ class Node:
         
     async def connect_to_master(self):
         """Connect to master node"""
-        while True:
-            if self.connected:
-                await asyncio.sleep(1)
-                continue
+        try:
+            logger.info(f"Connecting to master at {self.master_uri}")
+            async with websockets.connect(self.master_uri) as websocket:
+                self.websocket = websocket
+                self.connected = True
                 
-            try:
-                async with websockets.connect(self.master_uri) as websocket:
-                    self.websocket = websocket
-                    self.connected = True
+                # Register with master
+                register_msg = {
+                    'type': 'register',
+                    'device_info': asdict(self.device_info)
+                }
+                await websocket.send(json.dumps(register_msg))
+                logger.info("Connected to master")
+                
+                # Main message loop
+                while True:
+                    message = await websocket.recv()
+                    data = json.loads(message)
+                    await self._handle_message(data)
                     
-                    # Send registration
-                    registration = {
-                        'type': 'register',
-                        'id': self.id,
-                        'device_info': asdict(self.device_info)
-                    }
-                    await websocket.send(json.dumps(registration))
-                    logger.info(f"Registered with master as {self.id}")
-                    
-                    # Handle messages
-                    while True:
-                        try:
-                            message = await websocket.recv()
-                            data = json.loads(message)
-                            
-                            if data.get('type') == 'heartbeat':
-                                await websocket.send(json.dumps({
-                                    'type': 'heartbeat_response',
-                                    'id': self.id
-                                }))
-                        except websockets.exceptions.ConnectionClosed:
-                            break
-                            
-            except Exception as e:
-                logger.error(f"Connection error: {e}")
-                self.connected = False
-                self.websocket = None
-                await asyncio.sleep(self._reconnect_delay)
+        except websockets.exceptions.ConnectionClosed:
+            logger.error("Connection to master closed")
+            self.connected = False
+            await asyncio.sleep(self._reconnect_delay)
+            await self.connect_to_master()  # Try to reconnect
+        except Exception as e:
+            logger.error(f"Error connecting to master: {e}")
+            self.connected = False
+            await asyncio.sleep(self._reconnect_delay)
+            await self.connect_to_master()  # Try to reconnect
 
     async def load_model(self, model_name: str, device: str = None):
         """Load a model onto this node"""

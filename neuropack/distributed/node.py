@@ -11,6 +11,8 @@ import asyncio
 import logging
 from neuropack.core.distributed_manager import DistributedManager
 from pathlib import Path
+import websockets
+import sys
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +113,8 @@ class DeviceInfo:
 
 class Node:
     def __init__(self, master_host, master_port=8765):
+        self.master_host = master_host
+        self.master_port = master_port
         self.master_uri = f"ws://{master_host}:{master_port}"
         self.id = str(uuid.uuid4())
         self.device_info = DeviceInfo.gather_info()
@@ -131,12 +135,89 @@ class Node:
         }
         
     async def start(self):
-        """Start node operations"""
-        if self.is_master:
-            await self.start_master()
-        else:
-            await self.connect_to_master()
+        """Start the node and connect to master."""
+        try:
+            async with asyncio.TaskGroup() as tg:
+                # Start the command interface
+                tg.create_task(self._start_command_interface())
+                # Connect to master
+                tg.create_task(self._connect_to_master())
+        except* Exception as e:
+            for exc in e.exceptions:
+                logger.error(f"Detailed error: {exc}", exc_info=True)
+            raise
             
+    async def _start_command_interface(self):
+        """Start the command line interface."""
+        while True:
+            try:
+                command = await ainput("> ")
+                if command == "quit":
+                    logger.info("Shutting down...")
+                    sys.exit(0)
+                elif command == "status":
+                    self._print_status()
+                else:
+                    logger.warning(f"Unknown command: {command}")
+            except Exception as e:
+                logger.error(f"Error in command interface: {e}", exc_info=True)
+
+    async def _connect_to_master(self):
+        """Connect to master node."""
+        try:
+            uri = f"ws://{self.master_host}:{self.master_port}"
+            logger.info(f"Connecting to master at {uri}")
+            
+            async with websockets.connect(uri) as websocket:
+                # Register with master
+                await self._register_with_master(websocket)
+                
+                # Main message loop
+                while True:
+                    message = await websocket.recv()
+                    await self._handle_message(websocket, message)
+                    
+        except websockets.exceptions.ConnectionClosed:
+            logger.error("Connection to master closed")
+        except Exception as e:
+            logger.error(f"Error connecting to master: {e}", exc_info=True)
+            
+    async def _register_with_master(self, websocket):
+        """Register this node with the master."""
+        register_msg = {
+            'type': 'register',
+            'id': self.id,
+            'device_info': asdict(self.device_info)
+        }
+        await websocket.send(json.dumps(register_msg))
+        logger.info(f"Registered with master as node {self.id}")
+        
+    async def _handle_message(self, websocket, message):
+        """Handle incoming messages from master."""
+        try:
+            data = json.loads(message)
+            msg_type = data.get('type')
+            
+            if msg_type == 'load_model':
+                await self._handle_load_model(data)
+            elif msg_type == 'unload_model':
+                await self._handle_unload_model(data)
+            else:
+                logger.warning(f"Unknown message type: {msg_type}")
+                
+        except json.JSONDecodeError:
+            logger.error("Failed to decode message")
+        except Exception as e:
+            logger.error(f"Error handling message: {e}", exc_info=True)
+            
+    def _print_status(self):
+        """Print current node status."""
+        print("\n=== Node Status ===")
+        print(f"Node ID: {self.id}")
+        print(f"Connected to: {self.master_uri}")
+        print(f"Loaded Models: {list(self.device_info.loaded_models.keys())}")
+        print("=================\n")
+
     async def start_master(self):
         """Start master node operations"""
         logger.info("Starting master node...")
@@ -197,3 +278,11 @@ class Node:
                 }
             }
             await self.websocket.send(json.dumps(update))
+
+    async def _handle_load_model(self, data):
+        # Implementation depends on the load model logic
+        pass
+
+    async def _handle_unload_model(self, data):
+        # Implementation depends on the unload model logic
+        pass

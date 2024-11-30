@@ -1,24 +1,23 @@
 #!/bin/bash
 
-# Create virtual environment
-echo "Creating virtual environment..."
-python3 -m venv venv
+# Create virtual environment if it doesn't exist
+if [ ! -d "venv" ]; then
+    echo "Creating virtual environment..."
+    python3 -m venv venv
+fi
 
 # Activate virtual environment
 echo "Activating virtual environment..."
 source venv/bin/activate
 
-# Install required packages
-echo "Installing required packages..."
-pip install psutil
-pip install websockets
-pip install numpy
-pip install torch
-pip install gputil
+# Install required packages from setup.py
+echo "Installing package in development mode..."
+pip install -e .
 
-# Run setup script
-echo "Running setup script..."
-python setup_laptop.py
+# Run laptop setup script
+echo "Running laptop setup script..."
+python Devices/setup_laptop.py
 
-echo "Setup complete! To activate the environment in the future, run:"
-echo "source venv/bin/activate"
+echo "Setup complete!"
+echo "To activate the environment in the future, run: source venv/bin/activate"
+echo "To start the worker node, run: ./run_node.sh MASTER_IP"

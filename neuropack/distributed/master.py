@@ -95,7 +95,7 @@ class MasterNode(Node):
         try:
             await asyncio.gather(
                 self.web_server.start(),
-                websockets.serve(self.handle_connection, self.host, self.port)
+                websockets.serve(self.handle_websocket, self.host, self.port)
             )
             
         except Exception as e:
@@ -145,136 +145,130 @@ class MasterNode(Node):
                 logger.error(f"Error collecting metrics: {e}")
                 await asyncio.sleep(1)
 
-    async def handle_connection(self, websocket: websockets.WebSocketServerProtocol):
-        """Handle incoming WebSocket connections"""
-        node_id = str(uuid.uuid4())  # Generate ID for the node
+    async def handle_websocket(self, websocket, path):
+        """Handle websocket connection"""
+        node_id = None
         try:
-            message = await websocket.recv()
-            data = json.loads(message)
-            
-            if data.get('type') == 'register':
-                # Clean device info before creating DeviceInfo object
-                device_info_data = data['device_info']
-                if isinstance(device_info_data, dict):
-                    # Remove role and any other unexpected fields
-                    device_info_data = {k: v for k, v in device_info_data.items() 
-                                     if k in {f.name for f in fields(DeviceInfo)}}
-                    device_info = DeviceInfo.from_dict(device_info_data)
-                    
-                    # Store connection and device info
-                    self.connections[node_id] = websocket
-                    self.nodes[node_id] = device_info
-                    self.nodes[node_id].websocket = websocket
-                    
-                    logger.info(f"Node {node_id} registered with {device_info.gpu_count} GPUs")
-                    await self.broadcast_topology()
-                    
+            async for message in websocket:
+                if node_id is None:
+                    # First message should be registration
+                    try:
+                        if isinstance(message, str):
+                            data = json.loads(message)
+                        else:
+                            data = message
+                            
+                        if data.get('type') != 'register':
+                            logger.error("First message must be registration")
+                            return
+                            
+                        node_id = data.get('id')
+                        if not node_id:
+                            logger.error("Registration missing node id")
+                            return
+                            
+                        # Store connection
+                        self.connections[node_id] = websocket
+                        
+                        # Handle registration message
+                        await self.handle_node_message(node_id, data)
+                        
+                    except Exception as e:
+                        logger.error(f"Error processing registration: {e}")
+                        return
+                else:
                     # Handle subsequent messages
-                    while True:
-                        message = await websocket.recv()
-                        await self._handle_message(websocket, message)
+                    await self.handle_node_message(node_id, message)
                         
         except websockets.exceptions.ConnectionClosed:
             logger.info(f"Node {node_id} disconnected")
-        except Exception as e:
-            logger.error(f"Error handling connection: {e}", exc_info=True)
+            
         finally:
-            if node_id in self.connections:
-                del self.connections[node_id]
-            if node_id in self.nodes:
-                del self.nodes[node_id]
-            await self.broadcast_topology()
+            # Clean up connection
+            if node_id:
+                if node_id in self.connections:
+                    del self.connections[node_id]
+                if node_id in self.nodes:
+                    del self.nodes[node_id]
+                await self.broadcast_topology()
 
-    async def _handle_message(self, websocket, message):
-        """Handle incoming message from node"""
+    async def handle_node_message(self, node_id: str, message):
+        """Handle incoming messages from nodes"""
         try:
-            # Ensure message is a string before parsing
-            if isinstance(message, dict):
-                logger.warning("Received dict instead of string, converting to JSON")
+            data = message
+            if isinstance(message, str):
                 try:
-                    message = json.dumps(message)
-                except Exception as e:
-                    logger.error(f"Failed to convert dict to JSON: {e}")
+                    data = json.loads(message)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Invalid JSON message from {node_id}: {message}")
+                    logger.error(f"JSON decode error: {e}")
                     return
-            elif not isinstance(message, str):
-                logger.error(f"Received invalid message type: {type(message)}")
+            elif not isinstance(message, dict):
+                logger.error(f"Received invalid message type from {node_id}: {type(message)}")
                 return
-                    
-            try:
-                data = json.loads(message)
-            except json.JSONDecodeError:
-                logger.error(f"Invalid JSON message: {message}")
-                return
-                    
+
             msg_type = data.get('type')
-            node_id = data.get('id')
-            logger.debug(f"Received message type: {msg_type} from node: {node_id}")
+            if not msg_type:
+                logger.error(f"Message from {node_id} missing 'type' field: {data}")
+                return
+
+            logger.debug(f"Received message type {msg_type} from {node_id}")
             
             if msg_type == 'register':
+                # Handle registration message
+                device_info = data.get('device_info', {})
+                if not isinstance(device_info, dict):
+                    logger.error(f"Invalid device_info format from {node_id}: {device_info}")
+                    return
+                    
                 # Filter device info to only include valid fields
-                device_info = data.get('device_info', {})
                 valid_fields = {f.name for f in fields(DeviceInfo)}
                 device_info = {k: v for k, v in device_info.items() 
                              if k in valid_fields}
                 
-                await self._register_node(websocket, node_id, device_info)
-                
+                try:
+                    device_info_obj = DeviceInfo.from_dict(device_info)
+                    self.nodes[node_id] = device_info_obj
+                    logger.info(f"Node {node_id} registered with {device_info_obj.gpu_count} GPUs")
+                    await self.broadcast_topology()
+                except Exception as e:
+                    logger.error(f"Error registering node {node_id}: {e}")
+                    
             elif msg_type == 'status_update':
+                if node_id not in self.nodes:
+                    logger.warning(f"Status update from unregistered node: {node_id}")
+                    return
+                    
                 device_info = data.get('device_info', {})
+                if not isinstance(device_info, dict):
+                    logger.error(f"Invalid device_info in status update from {node_id}: {device_info}")
+                    return
+                    
+                # Filter and update device info
                 valid_fields = {f.name for f in fields(DeviceInfo)}
                 device_info = {k: v for k, v in device_info.items() 
                              if k in valid_fields}
                 
-                if node_id in self.nodes:
+                try:
                     self.nodes[node_id].update_device_info(device_info)
                     logger.debug(f"Updated device info for node {node_id}")
-                else:
-                    logger.warning(f"Received status update from unregistered node: {node_id}")
+                except Exception as e:
+                    logger.error(f"Error updating device info for {node_id}: {e}")
                     
             elif msg_type == 'heartbeat_response':
                 if node_id in self.nodes:
                     self.nodes[node_id].last_heartbeat = time.time()
                     logger.debug(f"Updated heartbeat for node {node_id}")
                 else:
-                    logger.warning(f"Received heartbeat from unregistered node: {node_id}")
+                    logger.warning(f"Heartbeat from unregistered node: {node_id}")
                     
             elif msg_type == 'error':
                 error_msg = data.get('error', 'Unknown error')
                 logger.error(f"Error from node {node_id}: {error_msg}")
                 
         except Exception as e:
-            logger.error(f"Error handling message: {e}")
+            logger.error(f"Error handling node message: {e}")
             logger.error(f"Message was: {message}")
-
-    async def _send_message(self, websocket, message):
-        """Send a message to a node"""
-        try:
-            if isinstance(message, str):
-                await websocket.send(message)
-            else:
-                try:
-                    json_message = json.dumps(message)
-                    await websocket.send(json_message)
-                except Exception as e:
-                    logger.error(f"Failed to send message: {e}")
-                    logger.error(f"Message was: {message}")
-                    
-        except Exception as e:
-            logger.error(f"Error sending message: {e}")
-            # Remove node if we can't send messages to it
-            for node_id, node in list(self.nodes.items()):
-                if node.websocket == websocket:
-                    logger.warning(f"Removing node {node_id} due to connection error")
-                    del self.nodes[node_id]
-                    break
-
-    async def _register_node(self, websocket, node_id, device_info):
-        """Register a new node"""
-        self.nodes[node_id] = DeviceInfo.from_dict(device_info)
-        self.nodes[node_id].websocket = websocket
-        self.nodes[node_id].last_heartbeat = time.time()
-        logger.info(f"Node {node_id} registered")
-        await self.broadcast_topology()
 
     async def _check_nodes(self):
         """Periodically check node status and send heartbeats"""

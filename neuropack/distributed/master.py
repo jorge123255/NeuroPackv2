@@ -304,27 +304,38 @@ class MasterNode(Node):
             for node_id, info in self.nodes.items():
                 node_data = {
                     'id': node_id,
-                    'info': {k: v for k, v in asdict(info).items() if k != 'role'},
+                    'device_info': asdict(info),
                     'role': 'master' if node_id == self.id else 'worker',
                     'metrics': self.performance_metrics.get(node_id, {}),
                     'models': self.model_registry.get(node_id, {}),
-                    'status': 'active' if info.websocket in self.connections else 'disconnected'
+                    'status': 'active' if node_id in self.connections else 'disconnected'
                 }
                 nodes_info.append(node_data)
                 
+            # Calculate links between nodes
+            links = []
+            for node_id in self.nodes:
+                if node_id != self.id:  # Not master
+                    links.append({
+                        'source': self.id,
+                        'target': node_id,
+                        'type': 'control'
+                    })
+                    
             topology = {
                 'nodes': nodes_info,
-                'links': [
-                    {'source': node_id, 'target': self.id}
-                    for node_id in self.connections
-                    if node_id != self.id
-                ]
+                'links': links
             }
             
-            logger.info(f"Broadcasting topology - Nodes: {len(self.nodes)}, Links: {len(topology['links'])}")
+            logger.info(f"Broadcasting topology - Nodes: {len(nodes_info)}, Links: {len(links)}")
             
-            if self.web_server:
-                await self.web_server.broadcast_topology(json.dumps(topology))
+            # Convert topology to JSON string before sending
+            try:
+                topology_json = json.dumps(topology)
+                await self.web_server.broadcast_topology(topology_json)
+            except Exception as e:
+                logger.error(f"Error serializing topology: {e}")
+                return
                 
         except Exception as e:
             logger.error(f"Error broadcasting topology: {e}")

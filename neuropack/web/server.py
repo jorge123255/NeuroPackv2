@@ -41,7 +41,7 @@ class TopologyServer:
             try:
                 # Send initial topology if available
                 if self.latest_topology:
-                    await websocket.send_json(self.latest_topology)
+                    await websocket.send_text(json.dumps(self.latest_topology))
                 
                 # Keep connection alive
                 while True:
@@ -64,12 +64,22 @@ class TopologyServer:
             return
             
         logger.info(f"Broadcasting topology to {len(self.connections)} clients")
+        
+        # Convert string to dict if needed
+        if isinstance(topology_data, str):
+            try:
+                topology_data = json.loads(topology_data)
+            except json.JSONDecodeError as e:
+                logger.error(f"Invalid JSON topology data: {e}")
+                return
+        
         self.latest_topology = topology_data
         
         dead_connections = set()
         for websocket in self.connections:
             try:
-                await websocket.send_json(topology_data)
+                # Send as JSON string
+                await websocket.send_text(json.dumps(topology_data))
             except Exception as e:
                 logger.error(f"Failed to send to client: {e}")
                 dead_connections.add(websocket)

@@ -39,26 +39,45 @@ NeuroPack uses a simplified two-container architecture:
 
 ## Quick Start
 
+### Setting Up a Worker Node (Laptop)
+
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/neuropack.git
-cd neuropack
+git clone https://github.com/jorge123255/NeuroPackv2.git
+cd NeuroPackv2
 ```
 
-2. Start the master node:
+2. Run the setup script:
 ```bash
-cd master-controller
-docker-compose up -d
+./setup_env.sh
 ```
+This will:
+- Create a Python virtual environment
+- Install all required dependencies
+- Configure your laptop as a worker node
 
-3. Set up worker nodes on each laptop:
+3. Start the worker node:
 ```bash
-python setup_laptop.py
+./run_node.sh MASTER_IP
 ```
+Replace `MASTER_IP` with your master node's IP address.
 
-4. Access the web interface:
-- Local: http://localhost:8080
-- Network: http://192.168.1.231:8080
+### Commands
+Once the worker node is running, you can use these commands:
+- `status` - Show node status (loaded models, connections, etc.)
+- `quit` - Exit the worker node
+
+## Development Setup
+
+If you want to install the package for development:
+```bash
+# Create and activate virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# Install in development mode
+pip install -e .
+```
 
 ## Configuration
 
@@ -99,7 +118,7 @@ python setup_laptop.py
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/NeuroPackv2.git
+git clone https://github.com/jorge123255/NeuroPackv2.git
 cd NeuroPackv2
 
 # Edit master-controller/docker-compose.yml
@@ -127,7 +146,7 @@ sudo apt-get install -y nvidia-container-toolkit
 sudo systemctl restart docker
 
 # Clone the repository
-git clone https://github.com/yourusername/NeuroPackv2.git
+git clone https://github.com/jorge123255/NeuroPackv2.git
 cd NeuroPackv2
 
 # Configure worker
@@ -176,6 +195,20 @@ docker-compose down
 docker-compose up -d --build
 ```
 
+## Troubleshooting
+
+### Worker Node Issues
+- If the worker fails to connect, verify:
+  - Master IP is correct
+  - Master node is running
+  - No firewall blocking port 8765
+  - You're in the virtual environment (`source venv/bin/activate`)
+
+### Virtual Environment
+- If you see "command not found" errors, make sure you've:
+  - Run `./setup_env.sh` first
+  - Activated the environment: `source venv/bin/activate`
+
 ### Important Notes
 
 1. Each GPU worker needs a unique `NODE_ID`
@@ -199,27 +232,6 @@ docker-compose up -d --build
    - Check logs: `docker-compose logs`
    - Verify Docker daemon: `sudo systemctl status docker`
    - Restart Docker: `sudo systemctl restart docker`
-
-## Setup Instructions
-
-### For Laptop/Worker Nodes
-1. Run the laptop setup script:
-```bash
-python Devices/setup_laptop.py
-```
-
-2. Start the worker node:
-```bash
-./run_node.sh MASTER_IP
-```
-Replace MASTER_IP with your master node's IP address.
-
-### For Development/Package Installation
-If you want to install the package for development:
-```bash
-pip install -e .
-```
-This will use setup.py to install the package in development mode.
 
 ## Non-Docker Worker Setup (Direct Installation)
 
@@ -245,7 +257,7 @@ source neuropack-env/bin/activate  # Linux/Mac
 .\neuropack-env\Scripts\activate  # Windows
 
 # Clone the repository
-git clone https://github.com/yourusername/NeuroPackv2.git
+git clone https://github.com/jorge123255/NeuroPackv2.git
 cd NeuroPackv2
 
 # Install dependencies

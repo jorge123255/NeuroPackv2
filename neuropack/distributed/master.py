@@ -202,41 +202,34 @@ class MasterNode(Node):
     async def broadcast_topology(self):
         """Broadcast current topology to web interface"""
         try:
-            topology = {
-                'nodes': [
-                    {
-                        'id': node_id,
-                        'info': asdict(info),
-                        'role': 'master' if node_id == self.id else 'worker',
-                        'metrics': self.performance_metrics.get(node_id, {}),
-                        'models': self.model_registry.get(node_id, {}),
-                        'status': 'active' if node_id in self.connections else 'disconnected'
-                    }
-                    for node_id, info in self.nodes.items()
-                ],
-                'links': [
-                    {
-                        'source': self.id,
-                        'target': node_id,
-                        'status': 'active' if node_id in self.connections else 'disconnected',
-                        'traffic': self.performance_metrics.get(node_id, {}).get('network_traffic', 0)
-                    }
-                    for node_id in self.nodes.keys() if node_id != self.id
-                ],
-                'cluster_stats': {
-                    'total_nodes': len(self.nodes),
-                    'active_nodes': len(self.connections),
-                    'total_gpus': sum(node.gpu_count for node in self.nodes.values()),
-                    'total_memory': sum(node.total_memory for node in self.nodes.values()),
-                    'loaded_models': self._get_loaded_models()
+            nodes_info = []
+            for node_id, info in self.nodes.items():
+                node_data = {
+                    'id': node_id,
+                    'info': {k: v for k, v in asdict(info).items() if k != 'role'},
+                    'role': 'master' if node_id == self.id else 'worker',
+                    'metrics': self.performance_metrics.get(node_id, {}),
+                    'models': self.model_registry.get(node_id, {}),
+                    'status': 'active' if node_id in self.connections else 'disconnected'
                 }
+                nodes_info.append(node_data)
+                
+            topology = {
+                'nodes': nodes_info,
+                'links': [
+                    {'source': node_id, 'target': self.id}
+                    for node_id in self.connections
+                    if node_id != self.id
+                ]
             }
             
-            if self.web_server:
-                await self.web_server.broadcast_topology(topology)
+            logger.info(f"Broadcasting topology - Nodes: {len(self.nodes)}, Links: {len(topology['links'])}")
             
+            if self.web_server:
+                await self.web_server.broadcast_topology(json.dumps(topology))
+                
         except Exception as e:
-            logger.error(f"Error broadcasting topology: {e}", exc_info=True)
+            logger.error(f"Error broadcasting topology: {e}")
 
     def _get_loaded_models(self) -> Dict[str, List[str]]:
         """Get all loaded models across the cluster"""

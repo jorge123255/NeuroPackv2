@@ -162,10 +162,9 @@ class Node:
         """Connect to master node."""
         while True:
             try:
-                uri = f"ws://{self.master_host}:{self.master_port}"
-                logger.info(f"Connecting to master at {uri}")
+                logger.info(f"Connecting to master at {self.master_uri}")
                 
-                async with websockets.connect(uri) as websocket:
+                async with websockets.connect(self.master_uri) as websocket:
                     # Register with master
                     await self._register_with_master(websocket)
                     
@@ -181,6 +180,49 @@ class Node:
                 logger.error(f"Error connecting to master: {e}", exc_info=True)
                 await asyncio.sleep(5)
                 
+    async def connect_to_master(self):
+        """Connect to master node"""
+        try:
+            logger.info(f"Connecting to master at {self.master_uri}")
+            async with websockets.connect(self.master_uri) as websocket:
+                self.websocket = websocket
+                self.connected = True
+                
+                # Register with master
+                device_info_dict = asdict(self.device_info)
+                if 'role' in device_info_dict:
+                    del device_info_dict['role']  # Remove role if present
+                    
+                register_msg = {
+                    'type': 'register',
+                    'device_info': device_info_dict
+                }
+                await websocket.send(json.dumps(register_msg))
+                logger.info("Connected to master")
+                
+                # Main message loop
+                while True:
+                    try:
+                        message = await websocket.recv()
+                        await self._handle_message(message)
+                    except websockets.exceptions.ConnectionClosed:
+                        logger.error("Connection to master closed")
+                        break
+                    except Exception as e:
+                        logger.error(f"Error in message loop: {e}")
+                        continue
+                        
+        except websockets.exceptions.ConnectionClosed:
+            logger.error("Connection to master closed")
+            self.connected = False
+            await asyncio.sleep(5)
+            await self.connect_to_master()  # Try to reconnect
+        except Exception as e:
+            logger.error(f"Error connecting to master: {e}")
+            self.connected = False
+            await asyncio.sleep(5)
+            await self.connect_to_master()  # Try to reconnect
+
     async def _register_with_master(self, websocket):
         """Register this node with the master."""
         device_info = self.device_info
@@ -247,11 +289,6 @@ class Node:
         logger.info("Starting master node...")
         # Initialize master operations
         
-    async def connect_to_master(self):
-        """Connect to master node"""
-        logger.info(f"Connecting to master at {self.master_uri}")
-        # Connection logic
-
     async def load_model(self, model_name: str, device: str = None):
         """Load a model onto this node"""
         try:

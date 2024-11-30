@@ -208,8 +208,8 @@ class MasterNode(Node):
                     logger.error(f"JSON decode error: {e}")
                     return
             elif isinstance(message, dict):
-                # Convert dict to JSON string first, then parse back to ensure consistent format
-                data = json.loads(json.dumps(message))
+                # If message is already a dict, use it directly instead of trying to parse it
+                data = message
             else:
                 logger.error(f"Received invalid message type from {node_id}: {type(message)}")
                 return

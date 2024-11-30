@@ -178,13 +178,18 @@ class MasterNode(Node):
         try:
             # Ensure message is a string before parsing
             if isinstance(message, dict):
-                data = message
-            else:
+                logger.warning(f"Received dict instead of string from {node_id}, converting to JSON")
                 try:
-                    data = json.loads(message)
-                except json.JSONDecodeError:
-                    logger.error(f"Invalid JSON message from {node_id}: {message}")
+                    message = json.dumps(message)
+                except Exception as e:
+                    logger.error(f"Failed to convert dict to JSON: {e}")
                     return
+            
+            try:
+                data = json.loads(message)
+            except json.JSONDecodeError:
+                logger.error(f"Invalid JSON message from {node_id}: {message}")
+                return
                 
             msg_type = data.get('type')
             logger.debug(f"Received message type {msg_type} from {node_id}")

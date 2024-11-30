@@ -242,13 +242,18 @@ class Node:
         try:
             # Ensure message is a string before parsing
             if isinstance(message, dict):
-                data = message
-            else:
+                logger.warning("Received dict instead of string, converting to JSON")
                 try:
-                    data = json.loads(message)
-                except json.JSONDecodeError:
-                    logger.error(f"Invalid JSON message: {message}")
+                    message = json.dumps(message)
+                except Exception as e:
+                    logger.error(f"Failed to convert dict to JSON: {e}")
                     return
+                    
+            try:
+                data = json.loads(message)
+            except json.JSONDecodeError:
+                logger.error(f"Invalid JSON message: {message}")
+                return
                     
             msg_type = data.get('type')
             logger.debug(f"Received message type: {msg_type}")
@@ -269,17 +274,7 @@ class Node:
                 await self._send_message(response)
                 
             elif msg_type == 'status_request':
-                # Remove role from device info if present
-                device_info_dict = asdict(self.device_info)
-                if 'role' in device_info_dict:
-                    del device_info_dict['role']
-                    
-                status = {
-                    'type': 'status_update',
-                    'id': self.id,
-                    'device_info': device_info_dict
-                }
-                await self._send_message(status)
+                await self._send_status_update()
                 
         except Exception as e:
             logger.error(f"Error handling message: {e}")
@@ -293,12 +288,22 @@ class Node:
     async def _send_message(self, message: dict):
         """Send a message to the master"""
         try:
-            if self.websocket and self.connected:
-                await self.websocket.send(json.dumps(message))
-            else:
+            if not self.websocket or not self.connected:
                 logger.warning("Not connected to master, cannot send message")
+                return
+                
+            if isinstance(message, str):
+                await self.websocket.send(message)
+            else:
+                try:
+                    json_message = json.dumps(message)
+                    await self.websocket.send(json_message)
+                except Exception as e:
+                    logger.error(f"Failed to send message: {e}")
+                    
         except Exception as e:
             logger.error(f"Error sending message: {e}")
+            self.connected = False  # Mark as disconnected on error
 
     async def _send_status_update(self):
         """Send status update to master"""

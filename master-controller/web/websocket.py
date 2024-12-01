@@ -26,17 +26,30 @@ class ConnectionManager:
                     logger.error(f"Error closing websocket for {websocket.client.host}: {e}")
             logger.info(f"Client {websocket.client.host} disconnected. Total connections: {len(self.active_connections)}")
 
-    async def broadcast(self, message: dict):
+    async def broadcast(self, message):
         """Broadcast a message to all connected clients"""
         if not self.active_connections:
             logger.debug("No active connections to broadcast to")
             return
             
         logger.debug(f"Broadcasting topology data to {len(self.active_connections)} connections")
-        if 'nodes' in message:
-            logger.debug(f"Nodes in topology: {len(message['nodes'])}")
-            
-        json_message = json.dumps(message)
+        
+        # Handle both string and dict messages
+        if isinstance(message, str):
+            try:
+                parsed_message = json.loads(message)
+                if 'nodes' in parsed_message:
+                    logger.debug(f"Nodes in topology: {len(parsed_message['nodes'])}")
+                json_message = message  # Already a JSON string
+            except json.JSONDecodeError:
+                logger.error("Failed to parse message as JSON")
+                return
+        else:
+            # It's a dict, so we can access it directly
+            if 'nodes' in message:
+                logger.debug(f"Nodes in topology: {len(message['nodes'])}")
+            json_message = json.dumps(message)
+        
         disconnected = set()
         
         for connection in self.active_connections:
@@ -49,7 +62,6 @@ class ConnectionManager:
                 logger.debug(f"Successfully sent message to {connection.client.host}")
             except Exception as e:
                 logger.error(f"Error sending message to {connection.client.host}: {e}")
-                disconnected.add(connection)
         
         # Remove disconnected clients
         for connection in disconnected:

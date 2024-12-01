@@ -232,10 +232,23 @@ class MasterNode(Node):
         except asyncio.CancelledError:
             pass
 
-    async def _handle_node_message(self, node_id: str, message: str):
+    async def _handle_node_message(self, node_id: str, message):
         """Handle messages from worker nodes"""
         try:
-            data = json.loads(message)
+            # Handle both string and dict messages
+            if isinstance(message, str):
+                try:
+                    data = json.loads(message)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Invalid JSON message from {node_id}: {message}")
+                    logger.error(f"JSON decode error: {e}")
+                    return
+            elif isinstance(message, dict):
+                data = message
+            else:
+                logger.error(f"Received invalid message type from {node_id}: {type(message)}")
+                return
+            
             msg_type = data.get('type')
             
             if msg_type == 'heartbeat_response':

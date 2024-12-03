@@ -262,6 +262,92 @@
                 border-radius: 0;
             }
         }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+        }
+
+        .modal-content {
+            background: var(--bg-panel);
+            margin: 15% auto;
+            padding: 20px;
+            border: 1px solid var(--primary-color);
+            border-radius: 8px;
+            width: 80%;
+            max-width: 600px;
+            box-shadow: 0 0 20px var(--glow-primary);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--primary-color);
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            color: var(--primary-color);
+        }
+
+        .close {
+            color: var(--primary-color);
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .close:hover {
+            color: var(--text-primary);
+        }
+
+        .source-selector {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 20px;
+        }
+
+        .source-selector label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .progress-bar {
+            height: 4px;
+            background: rgba(0, 255, 68, 0.1);
+            border-radius: 2px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            width: 0%;
+            background: var(--primary-color);
+            transition: width 0.3s ease;
+        }
+
+        .progress-text {
+            text-align: center;
+            color: var(--text-secondary);
+        }
     </style>
 </head>
 <body>
@@ -284,6 +370,9 @@
                         <div id="status" class="status-dot"></div>
                         <span>Status</span>
                     </div>
+                    <button id="download-model-btn" class="nav-link">
+                        <span>Download Model</span>
+                    </button>
                 </div>
             </div>
 
@@ -305,6 +394,35 @@
         </div>
     </main>
 
+    <div id="download-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Download Model</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="source-selector">
+                    <label>
+                        <input type="radio" name="model-source" value="huggingface" checked> Hugging Face
+                    </label>
+                    <label>
+                        <input type="radio" name="model-source" value="ollama"> Ollama
+                    </label>
+                </div>
+                <div class="input-group">
+                    <input type="text" id="model-name-input" placeholder="Enter model name (e.g., mistralai/Mistral-7B-v0.1)" class="chat-input">
+                    <button id="start-download-btn" class="send-button">Download</button>
+                </div>
+                <div id="download-progress" style="display: none;">
+                    <div class="progress-bar">
+                        <div class="progress-fill"></div>
+                    </div>
+                    <div class="progress-text">Downloading... 0%</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         let ws = null;
         let reconnectAttempts = 0;
@@ -314,13 +432,21 @@
         const messagesContainer = document.getElementById('messages');
         const modelSelect = document.getElementById('model-select');
         const statusDot = document.getElementById('status');
+        const downloadModelBtn = document.getElementById('download-model-btn');
+        const downloadModal = document.getElementById('download-modal');
+        const closeBtn = document.querySelector('.close');
+        const startDownloadBtn = document.getElementById('start-download-btn');
+        const modelNameInput = document.getElementById('model-name-input');
+        const progressBar = document.getElementById('download-progress');
+        const progressFill = document.querySelector('.progress-fill');
+        const progressText = document.querySelector('.progress-text');
 
         function setupWebSocket() {
             if (ws) {
                 ws.close();
             }
 
-            ws = new WebSocket('ws://localhost:8765');
+            ws = new WebSocket('ws://192.168.1.231:8765');
 
             ws.onopen = () => {
                 console.log('Connected to server');
@@ -394,17 +520,89 @@
         setupWebSocket();
 
         // Fetch available models
-        fetch('/models')
+        fetch('/api/models')
             .then(response => response.json())
-            .then(models => {
-                models.forEach(model => {
-                    const option = document.createElement('option');
-                    option.value = model.id;
-                    option.textContent = model.name;
-                    modelSelect.appendChild(option);
-                });
+            .then(data => {
+                if (data && Array.isArray(data.models)) {
+                    data.models.forEach(model => {
+                        const option = document.createElement('option');
+                        option.value = model.name;
+                        option.textContent = model.name;
+                        modelSelect.appendChild(option);
+                    });
+                }
             })
             .catch(error => console.error('Error fetching models:', error));
+
+        downloadModelBtn.onclick = () => {
+            downloadModal.style.display = 'block';
+        }
+
+        closeBtn.onclick = () => {
+            downloadModal.style.display = 'none';
+        }
+
+        window.onclick = (event) => {
+            if (event.target == downloadModal) {
+                downloadModal.style.display = 'none';
+            }
+        }
+
+        startDownloadBtn.onclick = async () => {
+            const modelName = modelNameInput.value.trim();
+            const source = document.querySelector('input[name="model-source"]:checked').value;
+            
+            if (!modelName) {
+                alert('Please enter a model name');
+                return;
+            }
+
+            try {
+                progressBar.style.display = 'block';
+                startDownloadBtn.disabled = true;
+
+                const response = await fetch('/api/models/download', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        model_name: modelName,
+                        source: source
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Failed to start download: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                const downloadId = data.download_id;
+
+                // Poll download progress
+                const progressInterval = setInterval(async () => {
+                    const progressResponse = await fetch(`/api/models/download/${downloadId}/progress`);
+                    const progressData = await progressResponse.json();
+                    
+                    progressFill.style.width = `${progressData.progress}%`;
+                    progressText.textContent = `Downloading... ${progressData.progress}%`;
+
+                    if (progressData.status === 'completed') {
+                        clearInterval(progressInterval);
+                        alert('Model downloaded successfully!');
+                        location.reload();
+                    } else if (progressData.status === 'failed') {
+                        clearInterval(progressInterval);
+                        alert(`Download failed: ${progressData.error}`);
+                    }
+                }, 1000);
+
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            } finally {
+                startDownloadBtn.disabled = false;
+            }
+        }
     </script>
 </body>
 </html>

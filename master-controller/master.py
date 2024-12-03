@@ -171,13 +171,20 @@ class MasterNode(Node):
                 gpu_info=node_info['gpu_info'],
                 hostname=node_info['hostname'],
                 ip_address=node_info['ip_address'],
-                platform=node_info['platform']
+                platform=node_info['platform'],
+                role=node_info.get('role', 'worker')
             )
             
             self.nodes[node_id] = device_info
             self.connections[node_id] = websocket
             gpu_count = len(node_info.get('gpu_info', []))
             logger.info(f"Node {node_id} registered with {gpu_count} GPUs")
+            
+            # Send registration acknowledgment
+            await websocket.send(json.dumps({
+                'type': 'register_ack',
+                'id': node_id
+            }))
             
             # Start heartbeat task
             heartbeat_task = asyncio.create_task(self._send_heartbeat(node_id, websocket))
@@ -186,16 +193,7 @@ class MasterNode(Node):
                 while True:
                     try:
                         message = await websocket.recv()
-                        data = json.loads(message)
-                        
-                        if data.get('type') == 'heartbeat_response':
-                            # Update node info if provided
-                            if 'device_info' in data:
-                                self.nodes[node_id] = DeviceInfo(**data['device_info'])
-                        else:
-                            # Handle other message types
-                            await self._handle_node_message(node_id, data)
-                            
+                        await self._handle_node_message(node_id, json.loads(message))
                     except websockets.ConnectionClosed:
                         logger.warning(f"Connection closed for node {node_id}")
                         break
@@ -203,6 +201,7 @@ class MasterNode(Node):
                         logger.error("Invalid message format")
                     except Exception as e:
                         logger.error(f"Error handling message: {e}")
+                        # Don't break on message handling errors
                         
             finally:
                 heartbeat_task.cancel()
@@ -213,7 +212,7 @@ class MasterNode(Node):
                     
         except Exception as e:
             logger.error(f"Connection error: {e}")
-            
+
     async def _send_heartbeat(self, node_id: str, websocket: websockets.WebSocketServerProtocol):
         """Send periodic heartbeat to node"""
         try:
@@ -253,16 +252,25 @@ class MasterNode(Node):
             
             if msg_type == 'heartbeat_response':
                 # Update last seen timestamp
-                self.nodes[node_id].last_seen = asyncio.get_event_loop().time()
+                if node_id in self.nodes:
+                    self.nodes[node_id].last_seen = asyncio.get_event_loop().time()
+            elif msg_type == 'status_update':
+                # Handle status updates without closing connection
+                if node_id in self.nodes and 'device_info' in data:
+                    self.nodes[node_id] = DeviceInfo(**data['device_info'])
+                    await self.broadcast_topology()
             elif msg_type == 'metrics_update':
                 # Update node metrics
                 self.performance_metrics[node_id] = data.get('metrics', {})
+                await self.broadcast_topology()
             elif msg_type == 'model_update':
                 # Update model registry
                 self.model_registry[node_id] = data.get('models', {})
+                await self.broadcast_topology()
                 
         except Exception as e:
             logger.error(f"Error handling node message: {e}")
+            # Don't close connection on error
 
     async def handle_message(self, node_id: str, message: str):
         """Handle incoming messages from nodes"""

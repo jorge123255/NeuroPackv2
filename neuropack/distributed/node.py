@@ -40,6 +40,7 @@ class DeviceInfo:
     hostname: str
     ip_address: str
     platform: str
+    role: str = "worker"
     loaded_models: Dict[str, Dict] = field(default_factory=dict)
     supported_models: List[str] = field(default_factory=list)
     
@@ -70,7 +71,8 @@ class DeviceInfo:
             gpu_info=gpu_info,
             hostname=hostname,
             ip_address=ip,
-            platform=platform.system()
+            platform=platform.system(),
+            role="gpu-worker" if gpu_count > 0 else "worker"
         )
 
     @staticmethod

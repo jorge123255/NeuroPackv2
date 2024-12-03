@@ -35,6 +35,7 @@ class DeviceInfo:
     hostname: str
     ip_address: str
     platform: str
+    role: str = "worker"
     loaded_models: Dict[str, Dict] = field(default_factory=dict)
     supported_models: List[str] = field(default_factory=list)
     last_heartbeat: float = 0.0

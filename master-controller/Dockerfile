@@ -12,13 +12,10 @@ RUN apt-get update && \
 # Copy the entire repository
 COPY . /app/NeuroPack/
 
-# Install NeuroPack
+# Install NeuroPack and requirements
 WORKDIR /app/NeuroPack
-RUN pip install -e .
-
-# Install master requirements
-WORKDIR /app/NeuroPack/master-controller
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install -e .
 
 # Create necessary directories
 RUN mkdir -p logs config data
@@ -29,9 +26,9 @@ ENV NODE_ROLE=master
 ENV LOG_LEVEL=INFO
 
 # Make start script executable
-RUN chmod +x start_master.sh
+RUN chmod +x master-controller/start_master.sh
 
 EXPOSE 8765 8080
 
 # Start command
-ENTRYPOINT ["/bin/bash", "start_master.sh"]
+ENTRYPOINT ["/bin/bash", "master-controller/start_master.sh"]

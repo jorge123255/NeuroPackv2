@@ -19,10 +19,12 @@ echo "Connecting to master at ${MASTER_HOST}:${MASTER_PORT}"
 
 # Start Ollama in background
 ollama serve &
-sleep 2
 
-# Start the worker node
-python3 gpu-worker/laptop_node.py \
+# Wait for Ollama to start
+sleep 5
+
+# Start the GPU worker node
+python3 gpu-worker/gpu_worker.py \
     --master ${MASTER_HOST} \
     --port ${MASTER_PORT} \
     --name ${NODE_ID}

@@ -12,6 +12,7 @@ import logging
 from neuropack.core.distributed_manager import DistributedManager
 from pathlib import Path
 import websockets
+import aiohttp
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,7 @@ class DeviceInfo:
     hostname: str
     ip_address: str
     platform: str
+    role: str = 'worker'  # Default role
     loaded_models: Dict[str, Dict] = field(default_factory=dict)
     supported_models: List[str] = field(default_factory=list)
     
@@ -73,28 +75,25 @@ class DeviceInfo:
         )
     
     @staticmethod
-    def _scan_ollama_models() -> List[str]:
+    async def _scan_ollama_models() -> List[str]:
         """Scan for locally available Ollama models"""
         try:
-            # First check if ollama is installed
-            import shutil
-            if shutil.which('ollama') is None:
-                logger.debug("Ollama not found in PATH")
-                return []
-                
-            import subprocess
-            result = subprocess.run(['ollama', 'list'], capture_output=True, text=True)
-            if result.returncode == 0:
-                models = []
-                for line in result.stdout.split('\n')[1:]:  # Skip header
-                    if line.strip():
-                        model_name = line.split()[0]
-                        models.append(f"ollama/{model_name}")
-                return models
-        except FileNotFoundError:
-            logger.debug("Ollama command not found")
-        except subprocess.SubprocessError as e:
-            logger.debug(f"Error running ollama list: {e}")
+            async with aiohttp.ClientSession() as session:
+                async with session.get('http://localhost:11434/api/tags') as response:
+                    if response.status != 200:
+                        logger.debug("Failed to get Ollama models list")
+                        return []
+                    
+                    data = await response.json()
+                    models = []
+                    for model in data.get('models', []):
+                        name = model.get('name')
+                        if name:
+                            models.append(f"ollama/{name}")
+                    return models
+                    
+        except aiohttp.ClientError:
+            logger.debug("Failed to connect to Ollama service")
         except Exception as e:
             logger.debug(f"Failed to scan Ollama models: {e}")
         return []
@@ -144,11 +143,15 @@ class Node:
         
     async def start(self):
         """Start node operations"""
-        if self.is_master:
-            await self.start_master()
-        else:
-            await self.connect_to_master()
-            
+        try:
+            if self.is_master:
+                await self.start_master()
+            else:
+                await self.connect_to_master()
+        except Exception as e:
+            logger.error(f"Error starting node: {e}")
+            raise
+
     async def start_master(self):
         """Start master node operations"""
         logger.info("Starting master node...")
@@ -156,36 +159,44 @@ class Node:
         
     async def connect_to_master(self):
         """Connect to master node"""
-        try:
-            logger.info(f"Connecting to master at {self.master_uri}")
-            async with websockets.connect(self.master_uri) as websocket:
-                self.websocket = websocket
-                self.connected = True
-                
-                # Register with master
-                register_msg = {
-                    'type': 'register',
-                    'device_info': asdict(self.device_info)
-                }
-                await websocket.send(json.dumps(register_msg))
-                logger.info("Connected to master")
-                
-                # Main message loop
-                while True:
-                    message = await websocket.recv()
-                    data = json.loads(message)
-                    await self._handle_message(data)
+        while True:
+            try:
+                logger.info(f"Connecting to master at ws://{self.master_uri}")
+                async with websockets.connect(self.master_uri) as websocket:
+                    self.websocket = websocket
+                    self.connected = True
                     
-        except websockets.exceptions.ConnectionClosed:
-            logger.error("Connection to master closed")
-            self.connected = False
-            await asyncio.sleep(self._reconnect_delay)
-            await self.connect_to_master()  # Try to reconnect
-        except Exception as e:
-            logger.error(f"Error connecting to master: {e}")
-            self.connected = False
-            await asyncio.sleep(self._reconnect_delay)
-            await self.connect_to_master()  # Try to reconnect
+                    # Register with master
+                    register_msg = {
+                        'type': 'register',
+                        'id': self.id,
+                        'device_info': asdict(self.device_info)
+                    }
+                    await websocket.send(json.dumps(register_msg))
+                    logger.info("Connected to master")
+                    
+                    # Main message loop
+                    while True:
+                        try:
+                            message = await websocket.recv()
+                            data = json.loads(message)
+                            await self._handle_message(data)
+                        except websockets.exceptions.ConnectionClosed:
+                            logger.error("Connection to master closed")
+                            break
+                        except json.JSONDecodeError as e:
+                            logger.error(f"Invalid message format: {e}")
+                        except Exception as e:
+                            logger.error(f"Error handling message: {e}")
+                            
+            except websockets.exceptions.ConnectionClosed:
+                logger.error("Connection to master closed")
+                self.connected = False
+                await asyncio.sleep(self._reconnect_delay)
+            except Exception as e:
+                logger.error(f"Error connecting to master: {e}")
+                self.connected = False
+                await asyncio.sleep(self._reconnect_delay)
 
     async def load_model(self, model_name: str, device: str = None):
         """Load a model onto this node"""
@@ -206,11 +217,28 @@ class Node:
 
     async def _load_ollama_model(self, model_name: str):
         """Load an Ollama model"""
-        import subprocess
         model = model_name.split('/')[1]
-        result = subprocess.run(['ollama', 'pull', model], capture_output=True, text=True)
-        if result.returncode != 0:
-            raise Exception(f"Failed to pull Ollama model: {result.stderr}")
+        
+        async with aiohttp.ClientSession() as session:
+            # First try to pull the model
+            try:
+                async with session.post(
+                    'http://localhost:11434/api/pull',
+                    json={'name': model}
+                ) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        raise Exception(f"Failed to pull Ollama model: {error_text}")
+                    
+                    # Read the streaming response
+                    async for line in response.content:
+                        data = json.loads(line)
+                        if 'error' in data:
+                            raise Exception(f"Failed to pull Ollama model: {data['error']}")
+                        logger.debug(f"Pull progress: {data.get('status', '')}")
+                        
+            except aiohttp.ClientError as e:
+                raise Exception(f"Failed to connect to Ollama service: {str(e)}")
 
     async def _load_huggingface_model(self, model_name: str, device: str):
         """Load a Hugging Face model"""
@@ -256,3 +284,33 @@ class Node:
         except Exception as e:
             logger.error(f"Inference error on node {self.id}: {e}")
             raise
+
+    async def _handle_message(self, data: dict):
+        """Handle incoming messages from master"""
+        try:
+            msg_type = data.get('type')
+            if msg_type == 'load_model':
+                model_name = data.get('model_name')
+                device = data.get('device')
+                await self.load_model(model_name, device)
+            elif msg_type == 'inference':
+                result = await self.handle_inference(data)
+                response = {
+                    'type': 'inference_result',
+                    'request_id': data.get('request_id'),
+                    'result': result
+                }
+                await self.websocket.send(json.dumps(response))
+            elif msg_type == 'ping':
+                await self.websocket.send(json.dumps({
+                    'type': 'pong',
+                    'id': self.id,
+                    'timestamp': data.get('timestamp')
+                }))
+        except Exception as e:
+            logger.error(f"Error handling message: {e}")
+            if self.websocket and self.websocket.open:
+                await self.websocket.send(json.dumps({
+                    'type': 'error',
+                    'error': str(e)
+                }))

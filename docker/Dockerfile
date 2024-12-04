@@ -59,7 +59,7 @@ RUN /app/venv/bin/pip install --no-cache-dir \
     torchaudio==2.2.2 \
     --extra-index-url https://download.pytorch.org/whl/cu118
 
-# Install other requirements
+# Install requirements and package
 RUN /app/venv/bin/pip install --no-cache-dir -r /app/NeuroPack/requirements.txt && \
     cd /app/NeuroPack && \
     /app/venv/bin/pip install -e .
@@ -73,28 +73,6 @@ RUN echo "source /app/venv/bin/activate" >> /root/.bashrc
 
 # Expose SSH port
 EXPOSE 22
-
-# Start SSH server
-CMD ["sh", "-c", "if [ ! -f /etc/ssh/keys/ssh_host_rsa_key ]; then ssh-keygen -f /etc/ssh/keys/ssh_host_rsa_key -N '' -t rsa && ssh-keygen -f /etc/ssh/keys/ssh_host_ecdsa_key -N '' -t ecdsa && ssh-keygen -f /etc/ssh/keys/ssh_host_ed25519_key -N '' -t ed25519; fi && /usr/sbin/sshd -D"]
-
-# Install additional Python packages after PyTorch installation
-RUN /app/venv/bin/pip install --no-cache-dir \
-    'numpy<2.0' \
-    psutil>=5.9.0 \
-    GPUtil>=1.4.0 \
-    aiohttp>=3.8.0 \
-    asyncio>=3.4.3 \
-    zeroconf>=0.39.0 \
-    websockets>=11.0.3 \
-    fastapi>=0.104.1 \
-    uvicorn>=0.24.0 \
-    networkx>=3.2.1 \
-    rich>=10.0.0 \
-    aiofiles>=23.2.1 \
-    jinja2>=3.1.2
-
-# Fix LD_LIBRARY_PATH warning
-ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-}
 
 # Create necessary directories
 RUN mkdir -p /app/NeuroPack/neuropack/distributed && \
@@ -120,5 +98,5 @@ EXPOSE 8765 8080 11434
 COPY docker/start_master.sh /app/start_master.sh
 RUN chmod +x /app/start_master.sh
 
-# Update the final CMD
-CMD ["sh", "-c", "ollama serve & /app/start_master.sh"]
+# Start SSH server and Ollama
+CMD ["sh", "-c", "if [ ! -f /etc/ssh/keys/ssh_host_rsa_key ]; then ssh-keygen -f /etc/ssh/keys/ssh_host_rsa_key -N '' -t rsa && ssh-keygen -f /etc/ssh/keys/ssh_host_ecdsa_key -N '' -t ecdsa && ssh-keygen -f /etc/ssh/keys/ssh_host_ed25519_key -N '' -t ed25519; fi && /usr/sbin/sshd -D & ollama serve & /app/start_master.sh"]
